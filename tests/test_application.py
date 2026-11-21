@@ -10,6 +10,8 @@ from parley.application.commands import (
     CommandHandlers,
     CompanionIsDeaf,
     NoteMistake,
+    PartnerArrived,
+    PartnerLeft,
     ReviewPhrase,
     SavePhrase,
     Say,
@@ -19,7 +21,7 @@ from parley.application.commands import (
     UserFinishedTalking,
     UserStartedTalking,
 )
-from parley.application.queries import DuePhrases, Listen, Progress, QueryHandlers
+from parley.application.queries import CompanionStatus, DuePhrases, Listen, Progress, QueryHandlers
 from parley.application.state import LiveState
 from parley.domain.conversation import Utterance
 from parley.domain.learning import MistakeKind, ReviewOutcome
@@ -61,7 +63,18 @@ def app():
         commands.register(m, h)
     for m, h in QueryHandlers(state, journal, clock, *repos).routes().items():
         queries.register(m, h)
+    commands.execute(PartnerArrived())
     return commands, queries, clock, mouth
+
+
+def test_without_claude_nothing_is_heard(app):
+    commands, queries, clock, _ = app
+    commands.execute(PartnerLeft())
+    start = len(kinds(queries))
+    commands.execute(UserStartedTalking())
+    commands.execute(UserFinishedTalking(Utterance("hello", clock.now(), 1.0)))
+    assert "heard" not in kinds(queries)[start:]
+    assert queries.ask(CompanionStatus())["activity"] == "waiting"
 
 
 def kinds(queries, after=0):
@@ -107,8 +120,9 @@ def test_phrase_cycle_and_progress(app):
     commands.execute(ReviewPhrase(phrase_id, ReviewOutcome.USED))
     assert queries.ask(DuePhrases()) == []
 
-    commands.execute(UserFinishedTalking(Utterance("I was in charge of the ETL", clock.now(), 2.0)))
-    commands.execute(UserFinishedTalking(Utterance("ну я короче", clock.now(), 1.0)))
+    for text, seconds in (("I was in charge of the ETL", 2.0), ("ну я короче", 1.0)):
+        commands.execute(UserStartedTalking())
+        commands.execute(UserFinishedTalking(Utterance(text, clock.now(), seconds)))
     for _ in range(2):
         commands.execute(NoteMistake(MistakeKind.GRAMMAR, "I am work", "I work", "present simple"))
     progress = queries.ask(Progress(days=1))

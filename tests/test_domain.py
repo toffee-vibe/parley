@@ -11,8 +11,26 @@ NOW = datetime(2026, 11, 21, 12, 0)
 
 
 class TestCompanion:
-    def test_waits_for_a_pause_before_speaking(self):
+    def test_without_claude_it_waits_and_does_not_listen(self):
         c = Companion()
+        assert c.activity is Activity.WAITING and not c.listening
+        c.user_started_talking(NOW)
+        assert c.activity is Activity.WAITING  # слушать некому — не «слышит» и не «думает»
+        c.partner_arrived(NOW)
+        assert c.activity is Activity.IDLE and c.listening
+        c.partner_left(NOW)
+        assert c.activity is Activity.WAITING and not c.listening
+
+    def test_muted_mic_survives_claude_coming_and_going(self):
+        c = Companion()
+        c.close_ears(NOW)
+        c.partner_arrived(NOW)
+        assert c.activity is Activity.DEAF and not c.listening
+        c.open_ears(NOW)
+        assert c.activity is Activity.IDLE and c.listening
+
+    def test_waits_for_a_pause_before_speaking(self):
+        c = Companion(partner_here=True, activity=Activity.IDLE)
         assert c.user_is_quiet(NOW, timedelta(seconds=1))
         c.user_started_talking(NOW)
         assert not c.user_is_quiet(NOW, timedelta(seconds=1))
@@ -21,7 +39,7 @@ class TestCompanion:
         assert c.user_is_quiet(NOW + timedelta(seconds=1.5), timedelta(seconds=1))
 
     def test_deaf_companion_ignores_voice_and_cannot_speak(self):
-        c = Companion()
+        c = Companion(partner_here=True, activity=Activity.IDLE)
         c.close_ears(NOW)
         assert isinstance(c.pull_events()[-1], EarsClosed)
         c.user_started_talking(NOW)
@@ -29,7 +47,7 @@ class TestCompanion:
         assert not c.can_speak()
 
     def test_noise_returns_to_idle_and_speech_to_thinking(self):
-        c = Companion()
+        c = Companion(partner_here=True, activity=Activity.IDLE)
         c.user_started_talking(NOW)
         c.user_finished_talking(NOW, said_something=False)
         assert c.activity is Activity.IDLE
@@ -38,7 +56,7 @@ class TestCompanion:
         assert c.activity is Activity.THINKING
 
     def test_thinking_does_not_last_forever(self):
-        c = Companion()
+        c = Companion(partner_here=True, activity=Activity.IDLE)
         c.user_started_talking(NOW)
         c.user_finished_talking(NOW, said_something=True)
         c.settle(NOW + timedelta(seconds=10), patience=timedelta(seconds=25))

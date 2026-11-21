@@ -13,6 +13,8 @@ from pathlib import Path
 os.environ.setdefault("XDG_DATA_HOME", tempfile.mkdtemp())    # отдельная пустая база, настоящую не трогаем
 os.environ["XDG_CONFIG_HOME"] = tempfile.mkdtemp()              # и настройки окна (громкость) тоже
 
+# Порядок важен: этот импорт подготавливает Qt (NixOS-библиотеки, переменные) до импорта PySide6.
+from parley.interfaces.gui import app as gui  # noqa: E402,I001
 from PySide6.QtCore import QEventLoop, QTimer  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -22,6 +24,7 @@ from parley.application.commands import (  # noqa: E402
     CloseEars,
     Emote,
     HideBoard,
+    PartnerArrived,
     Say,
     ShowBoard,
     SpeechBegan,
@@ -33,7 +36,6 @@ from parley.bootstrap import build  # noqa: E402
 from parley.domain.companion import Mood  # noqa: E402
 from parley.domain.conversation import Utterance  # noqa: E402
 from parley.infrastructure.clock import SystemClock  # noqa: E402
-from parley.interfaces.gui import app as gui  # noqa: E402  (готовит Qt до импорта PySide6)
 
 TENSES = """\
 | Время | Когда | Пример |
@@ -99,6 +101,8 @@ def main() -> None:
     snap("01-waiting", 1000)
     bridge._claude_online = True
     bridge.presenceChanged.emit()
+    run(PartnerArrived())
+    snap("01-ready", 600)
 
     run(UserStartedTalking())
     parley.levels.hearing = 0.08

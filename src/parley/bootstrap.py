@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from .application.bus import CommandBus, QueryBus
-from .application.commands import CommandHandlers, OpenEars, Tick, Timing
+from .application.commands import CommandHandlers, OpenEars, PartnerArrived, PartnerLeft, Tick, Timing
 from .application.listeners import HearingReporter, SpeechReporter
 from .application.queries import QueryHandlers
 from .application.state import LiveState
@@ -81,7 +81,15 @@ class Parley:
     closers: list[Callable[[], None]]  # что остановить при выходе: микрофон, звук
 
     def __post_init__(self) -> None:
-        self._pulse = Pulse(lambda: self.commands.execute(Tick()))
+        self._partner_online = False
+        self._pulse = Pulse(self._beat)
+
+    def _beat(self) -> None:
+        online = self.presence.online
+        if online != self._partner_online:  # Claude пришёл или ушёл
+            self._partner_online = online
+            self.commands.execute(PartnerArrived() if online else PartnerLeft())
+        self.commands.execute(Tick())
 
     @property
     def cloud_ready(self) -> bool:

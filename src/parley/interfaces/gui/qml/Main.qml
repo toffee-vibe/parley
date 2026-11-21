@@ -43,7 +43,7 @@ Window {
         x: pipColumn.x + pip.x + (pip.width - width) / 2
         y: pipColumn.y + pip.y + pip.height * 0.72 - height / 2
         color: Theme.stateColor(parley.activity)
-        opacity: parley.activity === "idle" ? 0.04 : 0.08
+        opacity: parley.activity === "idle" || parley.activity === "waiting" ? 0.04 : 0.08
         Behavior on color { ColorAnimation { duration: Theme.normal } }
         Behavior on opacity { NumberAnimation { duration: Theme.normal } }
         layer.enabled: true
@@ -113,9 +113,9 @@ Window {
             heard: parley.heardText
             speech: parley.speechText
             spoken: parley.speechSpoken
-            hint: parley.activity === "deaf" ? "Mic is off — I can't hear you. Press M or click me."
-                : !parley.cloudReady ? "No OpenRouter key — add it to ~/.config/parley/config.toml"
-                : !parley.claudeOnline ? "Start claude and say “let's practice English”"
+            hint: !parley.cloudReady ? "No OpenRouter key — add it to ~/.config/parley/config.toml"
+                : parley.activity === "deaf" ? "Mic is off — I can't hear you. Press M or click me."
+                : parley.activity === "waiting" ? "Waiting for Claude — start claude and say “let's practice English”.\nUntil then the mic stays off."
                 : "I'm listening. Say anything — English or Russian."
         }
     }

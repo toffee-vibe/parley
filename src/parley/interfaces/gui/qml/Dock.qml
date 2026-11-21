@@ -56,7 +56,7 @@ Rectangle {
         Row {
             anchors.verticalCenter: parent.verticalCenter
             spacing: 8
-            width: 104
+            width: 166
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 8; height: 8; radius: 4
@@ -72,7 +72,9 @@ Rectangle {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: ({ idle: "Ready", hearing: "Listening", thinking: "Thinking", speaking: "Speaking",
+                width: 150
+                elide: Text.ElideRight
+                text: ({ waiting: "Waiting for Claude", idle: "Ready", hearing: "Listening", thinking: "Thinking", speaking: "Speaking",
                          deaf: "Mic off" })[dock.activity] || dock.activity
                 color: dock.deaf ? Theme.deaf : Theme.textMuted
                 font.family: Theme.font

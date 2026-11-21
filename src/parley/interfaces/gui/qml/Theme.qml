@@ -20,6 +20,7 @@ QtObject {
     readonly property color textFaint: "#5c5f69"
 
     // --- состояния: этим цветом светятся глаза, антенна и индикаторы ---
+    readonly property color waiting: "#7d8597"     // серо-стальной — Claude не подключён, слушать некому
     readonly property color idle: "#8ee9ff"        // ледяной голубой — спокоен
     readonly property color listening: "#6ff2c4"   // мятный — слышит тебя
     readonly property color thinking: "#b9a3ff"    // сиреневый — думает (ждёт Claude)
@@ -27,7 +28,8 @@ QtObject {
     readonly property color deaf: "#ff6b6b"        // красный — слух выключен
     function stateColor(activity) {
         return activity === "hearing" ? listening : activity === "thinking" ? thinking
-             : activity === "speaking" ? speaking : activity === "deaf" ? deaf : idle
+             : activity === "speaking" ? speaking : activity === "deaf" ? deaf
+             : activity === "waiting" ? waiting : idle
     }
 
     // --- Пип: корпус из тёплого белого пластика, тёмное стекло лица ---

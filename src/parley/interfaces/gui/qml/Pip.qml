@@ -2,7 +2,7 @@
 // светящиеся глаза и рот из пяти огоньков. Всё рисуется кодом: любой размер, плавные анимации.
 //
 // Входы:
-//   activity      idle | hearing | thinking | speaking | deaf
+//   activity      waiting | idle | hearing | thinking | speaking | deaf
 //   mood          neutral | happy | curious | surprised | proud | thoughtful
 //   hearingLevel  громкость микрофона (0..~0.3)
 //   voiceLevel    громкость собственного голоса (0..~0.3)
@@ -35,6 +35,7 @@ Item {
     readonly property bool speaking: activity === "speaking"
     readonly property bool hearing: activity === "hearing"
     readonly property bool thinking: activity === "thinking"
+    readonly property bool waiting: activity === "waiting"
     readonly property bool joyful: !deaf && (mood === "happy" || mood === "proud")
     readonly property bool surprised: !deaf && mood === "surprised"
     readonly property bool pensive: !deaf && (mood === "thoughtful" || thinking)
@@ -92,7 +93,7 @@ Item {
 
     Timer { // оглядывается, когда скучно
         interval: 5000 + Math.random() * 5000; repeat: true
-        running: pip.activity === "idle" && !pip.pointing
+        running: (pip.activity === "idle" || pip.waiting) && !pip.pointing
         onTriggered: {
             interval = 5000 + Math.random() * 5000
             motion.glanceX = (Math.random() - 0.5) * 1.4
@@ -354,7 +355,7 @@ Item {
         property int side: 1
         // Насколько открыт: сон — щёлочка, раздумье — прищур, удивление — шире
         readonly property real open: pip.deaf ? 0.12
-            : (pip.surprised ? 1.1 : pip.pensive ? 0.6 : 1) * (1 - motion.blink * 0.9)
+            : (pip.surprised ? 1.1 : pip.pensive ? 0.6 : pip.waiting ? 0.75 : 1) * (1 - motion.blink * 0.9)
         property real grow: pip.surprised ? 1.3 : pip.mood === "curious" ? (side > 0 ? 1.18 : 0.9)
                           : pip.hearing ? 1.06 + pip.ear * 0.08 : 1
         width: pip.s * 0.07 * grow

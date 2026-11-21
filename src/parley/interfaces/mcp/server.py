@@ -117,7 +117,7 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
 
     @mcp.tool()
     def status() -> dict:
-        """Pip's state: activity (idle/hearing/thinking/speaking/deaf), mood, ears_open, current cursor."""
+        """Pip's state: activity (waiting/idle/hearing/thinking/speaking/deaf), mood, ears_open, current cursor."""
         return ask(CompanionStatus())
 
     @mcp.tool()

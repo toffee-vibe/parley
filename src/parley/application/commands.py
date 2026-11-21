@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 
-from ..domain.companion import Mood
+from ..domain.companion import Activity, Mood
 from ..domain.conversation import SoundNoticed, Utterance, heard
 from ..domain.learning import Mistake, MistakeKind, Phrase, ReviewOutcome, mistake_key
 from ..domain.shared import Aggregate
@@ -38,6 +38,16 @@ class Timing:
 
 
 # --- слух ---
+
+
+@dataclass(frozen=True)
+class PartnerArrived:
+    """Claude подключился (вызвал инструмент или подписался на поток событий)."""
+
+
+@dataclass(frozen=True)
+class PartnerLeft:
+    """Claude давно не появлялся — слушать некому."""
 
 
 @dataclass(frozen=True)
@@ -171,6 +181,8 @@ class CommandHandlers:
 
     def routes(self) -> dict[type, object]:
         return {
+            PartnerArrived: self._partner_arrived,
+            PartnerLeft: self._partner_left,
             CloseEars: self._close_ears,
             OpenEars: self._open_ears,
             ToggleEars: self._toggle_ears,
@@ -211,9 +223,26 @@ class CommandHandlers:
 
     def _open_ears(self, _: OpenEars) -> None:
         self.companion.open_ears(self.clock.now())
-        if self.ears:
-            self.ears.open()
+        self._sync_microphone()
         self._publish(self.companion)
+
+    def _partner_arrived(self, _: PartnerArrived) -> None:
+        self.companion.partner_arrived(self.clock.now())
+        self._sync_microphone()
+        self._publish(self.companion)
+
+    def _partner_left(self, _: PartnerLeft) -> None:
+        self.companion.partner_left(self.clock.now())
+        self._sync_microphone()
+        self._publish(self.companion)
+
+    def _sync_microphone(self) -> None:
+        """Микрофон работает, только когда слушать есть смысл: без Claude распознавание — деньги на ветер."""
+        if self.ears:
+            if self.companion.listening:
+                self.ears.open()
+            else:
+                self.ears.close()
 
     def _toggle_ears(self, _: ToggleEars) -> None:
         if self.companion.ears_open:
@@ -232,8 +261,8 @@ class CommandHandlers:
     def _user_finished_talking(self, command: UserFinishedTalking) -> None:
         now = self.clock.now()
         utterance = command.utterance
-        if utterance is not None and utterance.is_empty:
-            utterance = None
+        if (utterance is not None and utterance.is_empty) or self.companion.activity is not Activity.HEARING:
+            utterance = None  # пустая фраза или слушать уже некому (Claude ушёл, слух выключили)
         self.companion.user_finished_talking(now, said_something=utterance is not None)
         self._publish(self.companion)
         if utterance is not None:
@@ -241,7 +270,7 @@ class CommandHandlers:
             self.journal.publish([heard(utterance, now)])
 
     def _notice_sound(self, command: NoticeSound) -> None:
-        if self.companion.ears_open:
+        if self.companion.listening:
             self.journal.publish([SoundNoticed(at=self.clock.now(), label=command.label,
                                                confidence=round(command.confidence, 2))])
 
