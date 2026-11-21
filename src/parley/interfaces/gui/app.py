@@ -17,7 +17,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false;qt.qpa
 make_qt_loadable()
 
 from PySide6.QtCore import QRectF, Qt, QTimer  # noqa: E402
-from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QLinearGradient, QPainter, QPixmap, QSurfaceFormat  # noqa: E402
+from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap, QSurfaceFormat  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon  # noqa: E402
@@ -103,24 +103,20 @@ def _tray(qt: QApplication, app, window) -> QSystemTrayIcon:
 
 
 def _icon() -> QIcon:
-    """Иконка — голова Пипа, нарисованная кодом (без файлов-картинок)."""
+    """Иконка — Пип: полая оранжевая капсула с лицом, нарисованная кодом (без файлов-картинок)."""
     size = 128
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setPen(Qt.PenStyle.NoPen)
-    shell = QLinearGradient(0, 14, 0, 116)
-    shell.setColorAt(0, QColor("#fbf9f4"))
-    shell.setColorAt(1, QColor("#bdb6a8"))
-    p.setBrush(shell)
-    p.drawRoundedRect(QRectF(6, 20, 116, 90), 36, 36)
-    p.setBrush(QColor("#121318"))
-    p.drawRoundedRect(QRectF(18, 32, 92, 64), 27, 27)
-    p.setBrush(QColor("#8ee9ff"))
-    p.drawRoundedRect(QRectF(40, 46, 14, 22), 6, 6)
-    p.drawRoundedRect(QRectF(74, 46, 14, 22), 6, 6)
-    for i in range(5):
-        p.drawEllipse(QRectF(51 + i * 6.5 - 2, 80 - (4 - (i - 2) ** 2) * 0.6, 4, 4))
+    p.setBrush(QColor("#ff6b2c"))
+    p.drawRoundedRect(QRectF(4, 30, 120, 66), 33, 33)
+    p.setBrush(QColor("#ffffff"))
+    p.drawRoundedRect(QRectF(16, 42, 96, 42), 21, 21)
+    p.setBrush(QColor("#141414"))
+    p.drawRoundedRect(QRectF(44, 50, 9, 15), 4.5, 4.5)
+    p.drawRoundedRect(QRectF(75, 50, 9, 15), 4.5, 4.5)
+    p.drawRoundedRect(QRectF(58, 70, 12, 5), 2.5, 2.5)
     p.end()
     return QIcon(pixmap)

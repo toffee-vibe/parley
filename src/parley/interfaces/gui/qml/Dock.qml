@@ -1,9 +1,9 @@
-// Панель внизу: микрофон (слышит ли тебя Пип) и громкость его голоса.
+// Управление внизу: «пилюля» микрофона (слышит ли тебя Пип) и «пилюля» громкости его голоса.
 // Клавиши: M — микрофон, ↑/↓ — громкость (задаются в Main.qml).
 import QtQuick
 import QtQuick.Controls.Basic
 
-Rectangle {
+Row {
     id: dock
 
     property string activity: "idle"
@@ -12,105 +12,75 @@ Rectangle {
     signal volumeMoved(real value)
 
     readonly property bool deaf: activity === "deaf"
-    readonly property color stateColor: Theme.stateColor(activity)
+    spacing: 12
 
-    width: row.implicitWidth + 16
-    height: 60
-    radius: height / 2
-    color: Theme.surface
-    border.color: Theme.border
+    // ---------- микрофон ----------
+    Rectangle {
+        height: 52; radius: 26
+        width: micRow.implicitWidth + 40
+        color: dock.deaf ? Theme.danger : Theme.action
+        opacity: micMouse.containsMouse ? 0.88 : 1
+        Behavior on color { ColorAnimation { duration: Theme.fast } }
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: 14
-
-        // ---------- микрофон ----------
-        Rectangle {
-            id: micButton
-            width: 44; height: 44; radius: 22
-            anchors.verticalCenter: parent.verticalCenter
-            color: dock.deaf ? (micMouse.containsMouse ? Theme.dangerHover : Theme.danger)
-                             : (micMouse.containsMouse ? Theme.surfaceHover : Theme.surfaceRaised)
-            border.color: dock.deaf ? Theme.dangerBorder : "transparent"
-            Behavior on color { ColorAnimation { duration: Theme.fast } }
-
-            Icon {
-                anchors.centerIn: parent
-                path: dock.deaf ? Icons.micOff : Icons.mic
-                color: dock.deaf ? Theme.deaf : Theme.text
-            }
-            MouseArea {
-                id: micMouse
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: dock.toggleEars()
-            }
-            ToolTip.visible: micMouse.containsMouse
-            ToolTip.delay: 600
-            ToolTip.text: dock.deaf ? "Turn mic on (M)" : "Turn mic off (M) — Pip won't hear you"
-        }
-
-        // ---------- состояние ----------
         Row {
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 8
-            width: 166
-            Rectangle {
+            id: micRow
+            anchors.centerIn: parent
+            spacing: 10
+            Icon {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 8; height: 8; radius: 4
-                color: dock.stateColor
-                Behavior on color { ColorAnimation { duration: Theme.normal } }
-                SequentialAnimation on opacity {
-                    running: dock.activity === "hearing" || dock.activity === "thinking"
-                    loops: Animation.Infinite
-                    onRunningChanged: if (!running) parent.opacity = 1
-                    NumberAnimation { to: 0.35; duration: 520; easing.type: Easing.InOutSine }
-                    NumberAnimation { to: 1; duration: 520; easing.type: Easing.InOutSine }
-                }
+                path: dock.deaf ? Icons.micOff : Icons.mic
+                color: dock.deaf ? "#ffffff" : Theme.actionText
             }
             Text {
-                anchors.verticalCenter: parent.verticalCenter
-                width: 150
-                elide: Text.ElideRight
-                text: ({ waiting: "Waiting for Claude", idle: "Ready", hearing: "Listening", thinking: "Thinking", speaking: "Speaking",
-                         deaf: "Mic off" })[dock.activity] || dock.activity
-                color: dock.deaf ? Theme.deaf : Theme.textMuted
+                text: dock.deaf ? "Микрофон выкл." : "Микрофон вкл."
+                color: dock.deaf ? "#ffffff" : Theme.actionText
                 font.family: Theme.font
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
+                font.pixelSize: 16
+                font.weight: Font.Bold
             }
         }
+        MouseArea {
+            id: micMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: dock.toggleEars()
+        }
+        ToolTip.visible: micMouse.containsMouse
+        ToolTip.delay: 700
+        ToolTip.text: dock.deaf ? "Включить микрофон (M)" : "Выключить микрофон (M) — Пип тебя не услышит"
+    }
 
-        Rectangle { width: 1; height: 26; color: Theme.border; anchors.verticalCenter: parent.verticalCenter }
+    // ---------- громкость ----------
+    Rectangle {
+        height: 52; radius: 26
+        width: 300
+        color: Theme.surface
 
-        // ---------- громкость ----------
-        Item {
-            width: 30; height: 30
+        Item { // динамик: клик — без звука / вернуть как было
+            id: speakerButton
+            x: 12; width: 32; height: 32
             anchors.verticalCenter: parent.verticalCenter
+            property real remembered: 0.6
             Icon {
                 anchors.centerIn: parent
                 path: dock.volume === 0 ? Icons.speakerOff : dock.volume < 0.5 ? Icons.speakerLow : Icons.speaker
-                color: speakerMouse.containsMouse ? Theme.text : Theme.textMuted
+                color: Theme.text
             }
-            property real remembered: 0.6
-            MouseArea { // клик — выключить звук / вернуть как было
-                id: speakerMouse
+            MouseArea {
                 anchors.fill: parent
-                hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    if (dock.volume > 0) { parent.remembered = dock.volume; dock.volumeMoved(0) }
-                    else dock.volumeMoved(parent.remembered || 0.6)
+                    if (dock.volume > 0) { speakerButton.remembered = dock.volume; dock.volumeMoved(0) }
+                    else dock.volumeMoved(speakerButton.remembered || 0.6)
                 }
             }
         }
 
         Slider {
             id: slider
+            x: 52; width: 190
             anchors.verticalCenter: parent.verticalCenter
-            width: 132
             from: 0; to: 1
             value: dock.volume
             onMoved: dock.volumeMoved(value)
@@ -118,35 +88,26 @@ Rectangle {
                 x: slider.leftPadding
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
                 width: slider.availableWidth
-                height: 4
-                radius: 2
-                color: Theme.surfaceHover
-                Rectangle {
-                    width: slider.visualPosition * parent.width
-                    height: parent.height
-                    radius: 2
-                    color: Theme.text
-                }
+                height: 12; radius: 6
+                color: Theme.track
+                Rectangle { width: slider.visualPosition * parent.width; height: parent.height; radius: 6; color: Theme.action }
             }
             handle: Rectangle {
                 x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
                 y: slider.topPadding + slider.availableHeight / 2 - height / 2
-                width: slider.pressed ? 18 : 14
-                height: width
-                radius: width / 2
-                color: Theme.text
+                width: slider.pressed ? 28 : 24; height: width; radius: width / 2
+                color: Theme.action
                 Behavior on width { NumberAnimation { duration: Theme.fast } }
             }
         }
 
         Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 34
+            anchors { right: parent.right; rightMargin: 18; verticalCenter: parent.verticalCenter }
             text: Math.round(dock.volume * 100)
-            color: Theme.textFaint
+            color: Theme.text
             font.family: Theme.font
-            font.pixelSize: 13
-            font.weight: Font.DemiBold
+            font.pixelSize: 16
+            font.weight: Font.Black
             font.features: { "tnum": 1 }
         }
     }

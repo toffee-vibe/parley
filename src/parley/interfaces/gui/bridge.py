@@ -7,7 +7,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Property, QObject, QSettings, QTimer, Signal, Slot
+from PySide6.QtCore import Property, QObject, QSettings, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QGuiApplication
 
 from ...application.commands import HideBoard, ToggleEars
 from ...application.ports import JournalEntry
@@ -30,6 +31,7 @@ class Bridge(QObject):
     boardChanged = Signal()
     presenceChanged = Signal()
     volumeChanged = Signal()
+    themeChanged = Signal()
     soundHeard = Signal()
 
     def __init__(self, app: Parley):
@@ -49,6 +51,9 @@ class Bridge(QObject):
         self._claude_online = False
         self._prefs = QSettings("parley", "parley")
         app.volume.set(float(self._prefs.value("volume", app.volume.value)))  # type: ignore[arg-type]
+        # Тема: выбранная вручную, а если не выбирали — как в системе
+        system_dark = QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+        self._dark = self._prefs.value("dark", system_dark, type=bool)
 
         self._arrived.connect(self._on_entry)
         app.journal.subscribe(self._arrived.emit)
@@ -117,6 +122,17 @@ class Bridge(QObject):
         self.volumeChanged.emit()
 
     volume = Property(float, _get_volume, _set_volume, notify=volumeChanged)
+
+    def _get_dark(self) -> bool:
+        return bool(self._dark)
+
+    def _set_dark(self, value: bool) -> None:
+        if value != self._dark:
+            self._dark = value
+            self._prefs.setValue("dark", value)
+            self.themeChanged.emit()
+
+    darkTheme = Property(bool, _get_dark, _set_dark, notify=themeChanged)
 
     @Property(bool, constant=True)
     def cloudReady(self) -> bool:  # noqa: N802

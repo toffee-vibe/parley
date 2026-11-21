@@ -24,6 +24,7 @@ from parley.application.commands import (  # noqa: E402
     CloseEars,
     Emote,
     HideBoard,
+    OpenEars,
     PartnerArrived,
     Say,
     ShowBoard,
@@ -99,8 +100,7 @@ def main() -> None:
         print("saved", out / f"{name}.png")
 
     snap("01-waiting", 1000)
-    bridge._claude_online = True
-    bridge.presenceChanged.emit()
+    parley.presence.touched()  # «Claude на связи» — как будто он только что вызвал инструмент
     run(PartnerArrived())
     snap("01-ready", 600)
 
@@ -130,6 +130,18 @@ def main() -> None:
 
     run(CloseEars())
     snap("07-deaf", 900)
+
+    bridge.darkTheme = True  # те же кадры в тёмной теме
+    run(OpenEars())
+    speech = run(Say("[warm] Nice! Small fix: I've been working as a backend developer for three years.",
+                     may_interrupt_user=True))
+    run(SpeechBegan(speech))
+    run(SpeechProgressed(speech, len("[warm] Nice! Small fix: I've been working as")))
+    parley.levels.voice = 0.05
+    snap("08-dark-speaking")
+    run(ShowBoard("Времена: что когда", TENSES))
+    run(Emote(Mood.HAPPY))
+    snap("09-dark-board", 1200)
     parley.stop()
     qt.quit()
 

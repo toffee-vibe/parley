@@ -1,60 +1,44 @@
-// Субтитры под Пипом: что он услышал от тебя и что говорит сейчас.
-// Уже произнесённая часть реплики яркая, ещё не произнесённая — приглушённая.
+// Реплика Пипа — крупно и жирно. Уже произнесённая часть яркая, ещё не произнесённая — бледная.
+// Когда сказать нечего — подсказка обычным шрифтом.
 import QtQuick
 
-Column {
+Item {
     id: root
-
-    property string heard: ""          // последняя фраза пользователя
     property string speech: ""         // реплика Пипа
     property int spoken: 0             // сколько символов реплики уже прозвучало
     property string hint: ""           // подсказка, когда говорить нечего
+    property bool compact: false       // открыта доска — шрифт помельче
 
-    spacing: 16
+    implicitHeight: speech.length ? line.implicitHeight : hintText.implicitHeight
 
     function safe(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;") }
 
-    Text { // ты
+    Text {
+        id: line
         width: root.width
-        horizontalAlignment: Text.AlignHCenter
-        wrapMode: Text.Wrap
-        maximumLineCount: 3
-        elide: Text.ElideLeft
-        textFormat: Text.StyledText
-        visible: root.heard.length > 0
-        text: "<font color='" + Theme.textFaint + "'>YOU&nbsp;&nbsp;</font>" + root.safe(root.heard)
-        font.family: Theme.font
-        font.pixelSize: Theme.heardSize
-        font.weight: Font.Medium
-        color: Theme.textMuted
-    }
-
-    Text { // Пип
-        width: root.width
-        horizontalAlignment: Text.AlignHCenter
+        visible: root.speech.length > 0
         wrapMode: Text.Wrap
         maximumLineCount: 5
         elide: Text.ElideRight
         textFormat: Text.StyledText
-        visible: root.speech.length > 0
         text: "<font color='" + Theme.text + "'>" + root.safe(root.speech.slice(0, root.spoken)) + "</font>"
               + "<font color='" + Theme.textFaint + "'>" + root.safe(root.speech.slice(root.spoken)) + "</font>"
         font.family: Theme.font
-        font.pixelSize: Theme.speechSize
-        font.weight: Font.DemiBold
-        font.letterSpacing: -0.2
-        lineHeight: 1.2
+        font.pixelSize: root.compact ? Theme.speechSizeCompact : Theme.speechSize
+        font.weight: Font.Black
+        lineHeight: 1.04
     }
 
-    Text { // подсказка
+    Text {
+        id: hintText
         width: root.width
-        horizontalAlignment: Text.AlignHCenter
+        visible: root.speech.length === 0 && root.hint.length > 0
         wrapMode: Text.Wrap
-        visible: root.hint.length > 0 && root.heard.length === 0 && root.speech.length === 0
         text: root.hint
-        font.family: Theme.font
-        font.pixelSize: Theme.heardSize
-        font.weight: Font.Medium
         color: Theme.textMuted
+        font.family: Theme.font
+        font.pixelSize: 18
+        font.weight: Font.Medium
+        lineHeight: 1.2
     }
 }
