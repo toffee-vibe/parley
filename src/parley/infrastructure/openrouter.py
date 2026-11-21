@@ -35,11 +35,24 @@ class OpenRouter:
         return bool(self.settings.api_key)
 
     def transcribe(self, samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> str:
+        """Основная модель, а если она отказала (лимит запросов, сбой провайдера) — запасная."""
+        try:
+            return self._transcribe(samples, sample_rate, self.settings.transcription_model)
+        except OpenRouterError as e:
+            fallback = self.settings.fallback_transcription_model
+            if not fallback or fallback == self.settings.transcription_model or e.status in (None, 401, 402):
+                raise
+            log.info("Распознавание: %s отказала (%s), беру %s", self.settings.transcription_model, e.status, fallback)
+            return self._transcribe(samples, sample_rate, fallback)
+
+    def _transcribe(self, samples: np.ndarray, sample_rate: int, model: str) -> str:
         body: dict[str, Any] = {
-            "model": self.settings.transcription_model,
+            "model": model,
             "input_audio": {"data": base64.b64encode(to_wav(samples, sample_rate)).decode(), "format": "wav"},
             "provider": {"sort": "price"},  # одна модель у разных провайдеров стоит по-разному (до ×3)
         }
+        if self.settings.transcription_prompt:
+            body["prompt"] = self.settings.transcription_prompt
         data = self._post("/audio/transcriptions", body).json()
         return (data.get("text") or "").strip()
 

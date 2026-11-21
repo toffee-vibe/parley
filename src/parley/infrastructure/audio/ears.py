@@ -39,7 +39,7 @@ SOUND_WINDOW_S = 1.0
 SOUND_EVERY_S = 0.5
 SOUND_MIN_RMS = 0.01
 
-# Whisper на тишине и шуме иногда «слышит» дежурные фразы из субтитров.
+# На тишине и шуме распознавание иногда «слышит» дежурные фразы из субтитров.
 HALLUCINATIONS = {
     "thank you", "thank you.", "thanks for watching!", "thank you for watching.", "you", "bye.",
     "продолжение следует...", "субтитры сделал dimatorzok", "спасибо за просмотр!", "спасибо.",
@@ -141,7 +141,7 @@ class MicrophoneEars:
             log.warning("Распознавание не удалось: %s", e)
             self.listener.voice_finished(None)
             return
-        if text.lower().strip() in HALLUCINATIONS and duration < 2.0:
+        if _imagined(text, duration):
             text = ""
         self.listener.voice_finished(Utterance(text, started, duration) if text else None)
 
@@ -155,6 +155,12 @@ class MicrophoneEars:
             return
         for label, confidence in self._sounds.detect(window):
             self.listener.sound(label, confidence)
+
+
+def _imagined(text: str, duration: float) -> bool:
+    """Выдуманная фраза: дежурная фраза из субтитров или пара слов на долгом шуме («Okay.» на 15 секундах)."""
+    words = len(text.split())
+    return text.lower().strip() in HALLUCINATIONS or (0 < words <= 3 and words / max(duration, 0.1) < 0.4)
 
 
 class _EchoGuard:

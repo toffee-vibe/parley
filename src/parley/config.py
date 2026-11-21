@@ -21,7 +21,13 @@ DEFAULT_CONFIG = """\
 [openrouter]
 api_key = ""                                       # или переменная окружения OPENROUTER_API_KEY
 base_url = "https://openrouter.ai/api/v1"
-transcription_model = "openai/whisper-large-v3-turbo"  # ~$0.012 за час речи (самый дешёвый провайдер)
+# Распознавание. gpt-4o-mini-transcribe (~$0.11 за час твоей речи; тишина не отправляется) не переводит
+# смешанную речь: «Ну, I worked…» остаётся как сказано. Whisper такое переводит целиком на один язык.
+# Дешевле в 9 раз, но хуже со смешанной речью: "openai/whisper-large-v3-turbo".
+transcription_model = "openai/gpt-4o-mini-transcribe"
+# Подсказка распознаванию: слова, которые оно должно знать (имена, техника из твоих рассказов).
+transcription_prompt = "English speaking practice with Parley (Pip). The speaker is Russian and mixes English and Russian: keep every word in the language it was spoken, do not translate. Transcribe verbatim: keep grammar mistakes exactly as spoken. Python, backend, PostgreSQL, FastAPI, Docker, deploy."
+fallback_transcription_model = "openai/whisper-large-v3-turbo"  # если основная отказала (лимит запросов, сбой)
 voice_model = "fish-audio/s2.1-pro-free:free"      # бесплатно; пусто — только локальный голос
 
 [voice]
@@ -56,7 +62,12 @@ port = 8790
 class OpenRouterSettings:
     api_key: str = ""
     base_url: str = "https://openrouter.ai/api/v1"
-    transcription_model: str = "openai/whisper-large-v3-turbo"
+    transcription_model: str = "openai/gpt-4o-mini-transcribe"
+    transcription_prompt: str = ("English speaking practice with Parley (Pip). The speaker is Russian and mixes English "
+                                 "and Russian: keep every word in the language it was spoken, do not translate. "
+                                 "Transcribe verbatim: keep grammar mistakes exactly as spoken. "
+                                 "Python, backend, PostgreSQL, FastAPI, Docker, deploy.")
+    fallback_transcription_model: str = "openai/whisper-large-v3-turbo"
     voice_model: str = "fish-audio/s2.1-pro-free:free"
 
 
