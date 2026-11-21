@@ -18,7 +18,20 @@ from .board_style import style_board
 
 FRAME_MS = 33              # ~30 кадров в секунду: громкость и субтитры
 SMOOTHING = 0.45           # 0 — без сглаживания, ближе к 1 — плавнее
-SUBTITLE_HOLD_MS = 7000    # сколько показывать последнюю фразу после того, как она прозвучала
+# Реплики не гаснут по таймеру: длинное объяснение не успеть дочитать. Реплика агента держится
+# до следующей, твоя фраза — до следующей твоей.
+
+# Имя агента из рукопожатия MCP → как показать в окне
+AGENT_NAMES = {"claude-code": "Claude Code", "claude": "Claude", "opencode": "opencode", "codex": "Codex",
+               "cursor": "Cursor", "gemini": "Gemini CLI", "goose": "Goose", "zed": "Zed"}
+
+
+def agent_name(client: str) -> str:
+    client = client.lower()
+    for key, name in AGENT_NAMES.items():
+        if key in client:
+            return name
+    return client or "агент"
 STARTLING_SOUNDS = ("Bang", "Slam", "Knock", "Clap", "Smash", "Explosion", "Thump", "Door", "Gunshot", "Bark")
 
 
@@ -49,6 +62,7 @@ class Bridge(QObject):
         self._board_title = ""
         self._board_markdown = ""
         self._claude_online = False
+        self._agent = ""
         self._prefs = QSettings("parley", "parley")
         app.volume.set(float(self._prefs.value("volume", app.volume.value)))  # type: ignore[arg-type]
         # Тема: выбранная вручную, а если не выбирали — как в системе
@@ -62,8 +76,6 @@ class Bridge(QObject):
         self._frames.start()
         self._presence = QTimer(self, interval=1000, timeout=self._check_presence)
         self._presence.start()
-        self._fade_speech = QTimer(self, singleShot=True, interval=SUBTITLE_HOLD_MS, timeout=self._clear_speech)
-        self._fade_heard = QTimer(self, singleShot=True, interval=SUBTITLE_HOLD_MS * 2, timeout=self._clear_heard)
 
     # ---------- свойства для QML ----------
 
@@ -110,6 +122,10 @@ class Bridge(QObject):
     @Property(bool, notify=presenceChanged)
     def claudeOnline(self) -> bool:  # noqa: N802
         return self._claude_online
+
+    @Property(str, notify=presenceChanged)
+    def agentName(self) -> str:  # noqa: N802 — «Claude Code», «opencode», «Codex»…
+        return self._agent
 
     def _get_volume(self) -> float:
         return self.app.volume.value
@@ -163,20 +179,15 @@ class Bridge(QObject):
             case "mood":
                 self._mood = data["mood"]
                 self.stateChanged.emit()
-            case "heard":
+            case "hearing_text" | "heard":  # по ходу речи — распознанное до сих пор, в конце — вся мысль
                 self._heard = data["text"]
-                self._fade_heard.start()
                 self.subtitlesChanged.emit()
             case "speech_started":
                 self._speech, self._spoken = data["text"], 0
-                self._fade_speech.stop()
                 self.subtitlesChanged.emit()
             case "speech_finished":
                 self._spoken = len(self._speech)
-                self._fade_speech.start()
                 self.subtitlesChanged.emit()
-            case "interrupted" | "speech_failed":
-                self._fade_speech.start()
             case "board_shown":
                 self._board_open = True
                 self._board_title, self._board_markdown = data["title"], data["markdown"]
@@ -198,16 +209,9 @@ class Bridge(QObject):
             self._spoken = now["heard"]
             self.subtitlesChanged.emit()
 
-    def _clear_speech(self) -> None:
-        self._speech, self._spoken = "", 0
-        self.subtitlesChanged.emit()
-
-    def _clear_heard(self) -> None:
-        self._heard = ""
-        self.subtitlesChanged.emit()
-
     def _check_presence(self) -> None:
         online = self.app.presence.online
-        if online != self._claude_online:
-            self._claude_online = online
+        name = agent_name(self.app.presence.client)
+        if online != self._claude_online or name != self._agent:
+            self._claude_online, self._agent = online, name
             self.presenceChanged.emit()

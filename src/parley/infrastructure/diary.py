@@ -65,10 +65,13 @@ class Diary:
             self.record("event", event=entry.kind, **entry.data)
 
     def capture_warnings(self) -> None:
-        """Все WARNING и ERROR из логов приложения тоже попадают в дневник."""
+        """Все WARNING и ERROR попадают в дневник: и свои, и библиотек (MCP, uvicorn), и Qt (через parley.qt)."""
         handler = _DiaryHandler(self)
         handler.setLevel(logging.WARNING)
-        logging.getLogger("parley").addHandler(handler)
+        for name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):  # uvicorn не передаёт записи наверх
+            logger = logging.getLogger(name)
+            if not any(isinstance(h, _DiaryHandler) for h in logger.handlers):
+                logger.addHandler(handler)
 
     def _forget_old(self) -> None:
         oldest = date.today() - timedelta(days=KEEP_DAYS)

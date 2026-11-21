@@ -1,8 +1,8 @@
 // Главное окно — «белый лист» (или тёмный): плоско, крупный жирный шрифт, никаких теней.
-//   шапка: «parley», «Claude на связи», переключатель темы
-//   сцена: Пип слева, твоя фраза — серым облачком справа, его реплика — крупно под ним
-//   низ: «пилюли» микрофона и громкости
-// Когда Claude показывает доску — сцена сужается влево, доска выезжает справа, Пип смотрит на неё.
+//   шапка: «parley», какой агент на связи (Claude Code, opencode, Codex…), переключатель темы
+//   сцена: Пип по центру, над ним твоя фраза серым облачком, под ним его реплика — крупно
+//   низ: «пилюли» микрофона и громкости, тоже по центру
+// Когда агент показывает доску — всё уезжает влево, доска выезжает справа, Пип смотрит на неё.
 // Клавиши: M — микрофон, ↑/↓ — громкость, T — тема, Esc — закрыть доску, Ctrl+Q — выход.
 // Данные приходят из Python-объекта `parley` (interfaces/gui/bridge.py).
 import QtQuick
@@ -22,6 +22,7 @@ Window {
     readonly property bool boardOpen: parley.boardOpen
     readonly property bool wide: width >= 800
     readonly property real margin: 32
+    readonly property bool centered: !boardOpen   // сбоку ничего нет — Пип и панель по центру
 
     Binding { target: Theme; property: "dark"; value: parley.darkTheme }
 
@@ -46,7 +47,7 @@ Window {
             Text {
                 id: claude
                 anchors.centerIn: parent
-                text: parley.claudeOnline ? "● Claude на связи" : "○ Жду Claude"
+                text: parley.claudeOnline ? "● " + parley.agentName + " на связи" : "○ Жду агента"
                 color: parley.claudeOnline ? Theme.ok : Theme.textMuted
                 font.family: Theme.font
                 font.pixelSize: 14
@@ -78,15 +79,21 @@ Window {
         Behavior on width { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutBack; easing.overshoot: 0.6 } }
 
         HeardBubble {
-            anchors.right: parent.right
+            id: bubble
+            x: window.centered ? (stage.width - width) / 2 : stage.width - width
             text: parley.heardText
-            maxWidth: stage.width * 0.8
+            maxWidth: stage.width * (window.centered ? 0.7 : 0.8)
+            maxHeight: Math.max(90, stage.height * 0.22)
+            Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
         }
 
         Pip {
             id: pip
             readonly property real size: window.boardOpen ? 220 : Math.min(280, stage.width * 0.5)
-            y: 64
+            x: window.centered ? (stage.width - width) / 2 : 0
+            y: Math.max(64, bubble.visible ? bubble.height + 20 : 0)
+            Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: Theme.normal; easing.type: Easing.OutCubic } }
             width: size; height: size * 0.62
             Behavior on width { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutBack } }
 
@@ -105,9 +112,12 @@ Window {
             }
         }
 
-        Text { // что Пип делает сейчас
-            anchors { left: pip.right; leftMargin: 16; verticalCenter: pip.verticalCenter }
-            text: ({ waiting: "жду Claude", idle: "готов", hearing: "слушаю…", thinking: "думаю…",
+        Text { // что Пип делает сейчас: по центру — под ним, сбоку — справа от него
+            id: stateLabel
+            x: window.centered ? (stage.width - width) / 2 : pip.x + pip.width + 16
+            y: window.centered ? pip.y + pip.height + 8 : pip.y + (pip.height - height) / 2
+            Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
+            text: ({ waiting: "жду агента", idle: "готов", hearing: "слушаю…", thinking: "думаю…",
                      speaking: "говорю", deaf: "микрофон выключен" })[parley.activity] || ""
             color: Theme.pipColor(parley.activity, "neutral")
             font.family: Theme.font
@@ -117,14 +127,16 @@ Window {
         }
 
         Subtitles {
-            anchors { top: pip.bottom; topMargin: 18 }
+            y: (window.centered ? stateLabel.y + stateLabel.height : pip.y + pip.height) + 18
             width: stage.width
+            height: stage.height - y
+            centered: window.centered
             compact: window.boardOpen
             speech: parley.speechText
             spoken: parley.speechSpoken
             hint: !parley.cloudReady ? "Нет ключа OpenRouter — впиши его в ~/.config/parley/config.toml и перезапусти."
                 : parley.activity === "deaf" ? "Микрофон выключен — я тебя не слышу. Нажми M или на меня."
-                : parley.activity === "waiting" ? "Жду Claude: запусти claude и скажи «let's practice English». Пока его нет, микрофон выключен."
+                : parley.activity === "waiting" ? "Жду агента: в папке parley запусти claude, codex или opencode и скажи «let's practice English». Пока его нет, микрофон выключен."
                 : "Слушаю. Говори по-английски или по-русски."
         }
     }
@@ -147,7 +159,10 @@ Window {
 
     // ---------- управление ----------
     Dock {
-        anchors { left: parent.left; leftMargin: window.margin; bottom: parent.bottom; bottomMargin: 28 }
+        id: dock
+        x: window.centered ? (window.width - width) / 2 : window.margin
+        anchors { bottom: parent.bottom; bottomMargin: 28 }
+        Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
         activity: parley.activity
         volume: parley.volume
         onToggleEars: parley.toggleEars()

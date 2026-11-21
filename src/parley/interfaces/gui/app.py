@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 from pathlib import Path
@@ -16,7 +17,7 @@ for _name in ("QT_PLUGIN_PATH", "QT_STYLE_OVERRIDE", "QT_QPA_PLATFORMTHEME", "QT
 os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.wayland.textinput=false;qt.qpa.services=false")
 make_qt_loadable()
 
-from PySide6.QtCore import QRectF, Qt, QTimer  # noqa: E402
+from PySide6.QtCore import QRectF, Qt, QTimer, QtMsgType, qInstallMessageHandler  # noqa: E402
 from PySide6.QtGui import QAction, QColor, QFontDatabase, QIcon, QPainter, QPixmap, QSurfaceFormat  # noqa: E402
 from PySide6.QtQml import QQmlApplicationEngine  # noqa: E402
 from PySide6.QtQuickControls2 import QQuickStyle  # noqa: E402
@@ -43,6 +44,20 @@ def load_fonts() -> None:
         QFontDatabase.addApplicationFont(str(font))
 
 
+def log_qt_messages() -> None:
+    """Предупреждения Qt и QML — в обычный лог (а значит, и в дневник), а не только в консоль."""
+    qt_log = logging.getLogger("parley.qt")
+    levels = {QtMsgType.QtWarningMsg: logging.WARNING, QtMsgType.QtCriticalMsg: logging.ERROR,
+              QtMsgType.QtFatalMsg: logging.CRITICAL, QtMsgType.QtInfoMsg: logging.INFO,
+              QtMsgType.QtDebugMsg: logging.DEBUG}
+
+    def handler(kind: QtMsgType, context, message: str) -> None:  # noqa: ANN001 — сигнатура Qt
+        where = f" ({context.file}:{context.line})" if context.file else ""
+        qt_log.log(levels.get(kind, logging.WARNING), "%s%s", message, where)
+
+    qInstallMessageHandler(handler)
+
+
 def quit_on_signals(qt: QApplication) -> QTimer:
     """Ctrl+C и kill завершают программу. Пока крутится цикл Qt, Python не видит сигналы —
     таймер раз в 200 мс отдаёт ему управление, чтобы обработчик успел сработать."""
@@ -54,6 +69,7 @@ def quit_on_signals(qt: QApplication) -> QTimer:
 
 
 def run(settings: Settings) -> int:
+    log_qt_messages()
     prepare_qt()
     qt = QApplication([])
     qt.setApplicationName("Parley")

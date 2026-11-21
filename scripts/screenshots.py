@@ -29,8 +29,10 @@ from parley.application.commands import (  # noqa: E402
     Say,
     ShowBoard,
     SpeechBegan,
+    SpeechEnded,
     SpeechProgressed,
     UserFinishedTalking,
+    UserPaused,
     UserStartedTalking,
 )
 from parley.bootstrap import build  # noqa: E402
@@ -81,6 +83,7 @@ def main() -> None:
     settings.server.port = 8798
     settings.openrouter.api_key = "preview"
     settings.conversation.murmur_after_s = 0  # не синтезировать «Hmm» (сеть не нужна)
+    settings.conversation.turn_end_s = 0.3    # ход заканчивается быстро — снимки не ждут
 
     gui.prepare_qt()
     qt = QApplication([])
@@ -107,16 +110,20 @@ def main() -> None:
         print("saved", out / f"{name}.png")
 
     snap("01-waiting", 1000)
-    parley.presence.touched()  # «Claude на связи» — как будто он только что вызвал инструмент
+    parley.presence.touched("claude-code")  # «Claude Code на связи» — как будто он только что вызвал инструмент
     run(PartnerArrived())
     snap("01-ready", 600)
 
     run(UserStartedTalking())
+    run(UserPaused(transcribing=True))
+    run(UserFinishedTalking(Utterance("I am work as backend developer", now(), 2)))
+    run(UserStartedTalking())  # продолжил мысль после паузы
     parley.levels.hearing = 0.08
     snap("02-hearing")
     parley.levels.hearing = 0.0
-    run(UserFinishedTalking(Utterance("I am work as backend developer since three years", now(), 3)))
-    snap("03-thinking")
+    run(UserPaused(transcribing=True))
+    run(UserFinishedTalking(Utterance("since three years", now(), 1)))
+    snap("03-thinking")  # пульс закончил ход через turn_end_s
 
     speech = run(Say("Small fix: I've been working as a backend developer for three years.",
                      may_interrupt_user=True))
@@ -125,6 +132,7 @@ def main() -> None:
     parley.levels.voice = 0.05
     snap("04-speaking")
     parley.levels.voice = 0.0
+    run(SpeechEnded(speech))
 
     run(ShowBoard("Времена: что когда", TENSES))
     run(Emote(Mood.HAPPY))
@@ -134,6 +142,15 @@ def main() -> None:
     for mood in (Mood.CURIOUS, Mood.SURPRISED, Mood.THOUGHTFUL, Mood.PROUD):
         run(Emote(mood))
         snap(f"06-mood-{mood.value}", 700)
+
+    long = ("Смотри, логика одна на все времена. В обычном предложении вспомогательный глагол спрятан, "
+            "а в отрицании и вопросе он выходит наружу, и тогда основной глагол стоит в простой форме. "
+            "Поэтому did you work, а не did you worked. В Present Perfect вспомогательный — have, и он есть всегда: "
+            "I have worked, have you worked? Скажи по-английски: я работал там два года.")
+    speech = run(Say(long, may_interrupt_user=True))
+    run(SpeechBegan(speech))
+    run(SpeechProgressed(speech, int(len(long) * 0.7)))
+    snap("06-long-speech", 900)
 
     run(CloseEars())
     snap("07-deaf", 900)
