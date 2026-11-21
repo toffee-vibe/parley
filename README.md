@@ -75,6 +75,16 @@ bind = SUPER, M, exec, curl -sX POST http://127.0.0.1:8790/ears/toggle
 **Эхо.** В колонках микрофон слышит самого Пипа. Parley сам измеряет громкость эха в начале каждой реплики
 и засчитывает перебивание, только когда ты заметно громче (`hearing.echo_margin`). В наушниках эха нет.
 
+## Чтобы разговаривать было не неловко
+
+- **Характер.** Пип — коллега-разработчик, а не учитель: говорит просто, со своим мнением и сухим юмором,
+  без «Great job!» и без перебора эмоций. Всё это — в начале `interfaces/mcp/instructions.md`.
+- **Память.** Claude молча запоминает факты о тебе (работа, проекты, к чему готовишься, незакрытые темы)
+  и в начале сессии продолжает с того места, где остановились. Хранится в `parley.db`, таблица `facts`.
+- **Без мёртвой тишины.** Если Claude думает дольше 1,6 с, Пип сам отзывается «Hmm» / «Right» / «I see».
+  Отклики синтезируются один раз и лежат в `~/.local/share/parley/murmurs/`. Настройка — `murmur_after_s`
+  в `[conversation]` (0 — выключить). Пока ты говоришь, Пип молча кивает на твоих паузах.
+
 ## Технический дневник: что улучшать
 
 Parley записывает, как он работал, в `~/.local/share/parley/diary/ГГГГ-ММ-ДД.jsonl`
@@ -99,7 +109,7 @@ uv run parley report -d 7     # за неделю: сколько стоило, 
 
 | Канал | Для чего |
 |---|---|
-| `http://127.0.0.1:8790/mcp` | MCP: `say`, `listen`, `emote`, `show_board`, `hide_board`, `save_phrase`, `due_phrases`, `review_phrase`, `note_mistake`, `progress`, `status`, `set_ears`, `stop_speaking`, `note_for_developer` |
+| `http://127.0.0.1:8790/mcp` | MCP: `say`, `listen`, `emote`, `show_board`, `hide_board`, `save_phrase`, `due_phrases`, `review_phrase`, `note_mistake`, `progress`, `recall`, `remember`, `forget`, `status`, `set_ears`, `stop_speaking`, `note_for_developer` |
 | `/events` | SSE-поток событий: `heard`, `sound`, `interrupted`, `speech_dropped`, `speech_finished`, `ears_closed`… |
 | `/events.ndjson` | то же, по одной JSON-строке; Claude Code подписывается через Monitor и `curl -sN` |
 | `listen` (MCP) | long-poll, если подписаться на поток нельзя |
@@ -114,12 +124,13 @@ uv run parley report -d 7     # за неделю: сколько стоило, 
 | Раскладку окна, доску, реплики, кнопки | `qml/Main.qml`, `qml/Board.qml`, `qml/Subtitles.qml`, `qml/HeardBubble.qml`, `qml/Dock.qml` |
 | Вид таблиц и выделений на доске | `src/parley/interfaces/gui/board_style.py` |
 | Как фраза делится между голосами | `src/parley/infrastructure/audio/voices.py` (`language_runs`) |
-| Как Claude учит (метод, языки, стиль исправлений) | `src/parley/interfaces/mcp/instructions.md` |
+| Характер Пипа, память, как Claude учит (метод, языки, стиль исправлений) | `src/parley/interfaces/mcp/instructions.md` |
 | Когда Пипу можно говорить (пауза, перебивание) | `src/parley/domain/companion.py`, `domain/speech.py`, `[conversation]` в конфиге |
 | Интервалы повторения, правила фраз и ошибок | `src/parley/domain/learning.py` |
 | Модели, голос, пороги, устройства | `~/.config/parley/config.toml` |
 | Распознавание или голос на другой сервис | `src/parley/infrastructure/` + одна строка в `src/parley/bootstrap.py` |
 | Что пишется в технический дневник и сводку `parley report` | `src/parley/infrastructure/diary.py` |
+| Какие «Hmm» говорит Пип, пока Claude думает | `src/parley/infrastructure/audio/murmurs.py` (`MURMURS`) |
 | Новый инструмент для Claude | команда/запрос в `application/`, обёртка в `interfaces/mcp/server.py` |
 
 ## Архитектура

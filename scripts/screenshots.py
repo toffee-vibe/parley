@@ -61,6 +61,12 @@ class SilentMouth:
     def cancel(self, speech_ids):
         pass
 
+    def murmur(self):
+        pass
+
+    def hush(self):
+        pass
+
 
 def wait(ms: int) -> None:
     loop = QEventLoop()
@@ -74,6 +80,7 @@ def main() -> None:
     settings = config.Settings()
     settings.server.port = 8798
     settings.openrouter.api_key = "preview"
+    settings.conversation.murmur_after_s = 0  # не синтезировать «Hmm» (сеть не нужна)
 
     gui.prepare_qt()
     qt = QApplication([])
@@ -111,10 +118,10 @@ def main() -> None:
     run(UserFinishedTalking(Utterance("I am work as backend developer since three years", now(), 3)))
     snap("03-thinking")
 
-    speech = run(Say("[warm] Nice! Small fix: I've been working as a backend developer for three years.",
+    speech = run(Say("Small fix: I've been working as a backend developer for three years.",
                      may_interrupt_user=True))
     run(SpeechBegan(speech))
-    run(SpeechProgressed(speech, len("[warm] Nice! Small fix: I've been working as")))
+    run(SpeechProgressed(speech, len("Small fix: I've been working as")))
     parley.levels.voice = 0.05
     snap("04-speaking")
     parley.levels.voice = 0.0
@@ -133,10 +140,10 @@ def main() -> None:
 
     bridge.darkTheme = True  # те же кадры в тёмной теме
     run(OpenEars())
-    speech = run(Say("[warm] Nice! Small fix: I've been working as a backend developer for three years.",
+    speech = run(Say("Small fix: I've been working as a backend developer for three years.",
                      may_interrupt_user=True))
     run(SpeechBegan(speech))
-    run(SpeechProgressed(speech, len("[warm] Nice! Small fix: I've been working as")))
+    run(SpeechProgressed(speech, len("Small fix: I've been working as")))
     parley.levels.voice = 0.05
     snap("08-dark-speaking")
     run(ShowBoard("Времена: что когда", TENSES))

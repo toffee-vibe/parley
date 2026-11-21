@@ -10,6 +10,7 @@
 //   pointing      смотрит на доску справа
 // Методы:
 //   startle()     вздрогнуть (резкий звук)
+//   nod()         кивнуть (сам кивает, пока слушает: на паузах в твоей речи и когда договорил)
 //
 // Лица (expression): sleep (ждёт Claude / микрофон выключен), listen («о»), think (глаза вверх, черта),
 // neutral (капли и улыбка), happy (^ ^ и рот «D»), surprised (круглые глаза, «О»), curious (один глаз больше).
@@ -50,6 +51,7 @@ Item {
         property real blink: 0        // 1 — глаза закрыты
         property real glanceX: 0
         property real glanceY: 0
+        property real nod: 0          // кивок: 1 — голова внизу
     }
     NumberAnimation { target: motion; property: "phase"; running: true; loops: Animation.Infinite
                       from: 0; to: Math.PI * 2; duration: pip.asleep ? 5200 : 3000 }
@@ -94,13 +96,44 @@ Item {
     }
     onExpressionChanged: if (expression === "happy" || expression === "surprised") hopAnim.restart()
 
+    // Кивает, пока слушает: на паузах в твоей речи (поговорил хотя бы полсекунды, потом затих)
+    // и когда ты договорил. Молча — это живой «угу», который не перебивает.
+    SequentialAnimation {
+        id: nodAnim
+        NumberAnimation { target: motion; property: "nod"; to: 1; duration: 160; easing.type: Easing.OutQuad }
+        NumberAnimation { target: motion; property: "nod"; to: 0; duration: 320; easing.type: Easing.InOutQuad }
+    }
+    QtObject {
+        id: listener
+        property real loud: 0         // сколько секунд подряд ты говоришь
+        property real quiet: 0        // сколько секунд подряд тишина после речи
+        property real lastNod: 0
+    }
+    function nod() {
+        if (Date.now() - listener.lastNod < 2200) return
+        listener.lastNod = Date.now()
+        nodAnim.restart()
+    }
+    Timer {
+        interval: 100; repeat: true; running: pip.activity === "hearing"
+        onRunningChanged: { listener.loud = 0; listener.quiet = 0 }
+        onTriggered: {
+            if (pip.ear > 0.3) { listener.loud += 0.1; listener.quiet = 0 }
+            else if (listener.loud > 0.5) {
+                listener.quiet += 0.1
+                if (listener.quiet >= 0.3) { pip.nod(); listener.loud = 0; listener.quiet = 0 }
+            }
+        }
+    }
+    onActivityChanged: if (activity === "thinking") nod()
+
     // ================= капсула =================
     Item {
         id: body
         width: Math.min(pip.width, pip.height * 1.9)
         height: width * 0.52
         anchors.centerIn: parent
-        anchors.verticalCenterOffset: -(Math.sin(motion.phase) * 0.02 + motion.hop * 0.12) * width
+        anchors.verticalCenterOffset: -(Math.sin(motion.phase) * 0.02 + motion.hop * 0.12 - motion.nod * 0.03) * width
         rotation: pip.tilt
         // Говорит — чуть сплющивается в такт голосу; прыгает — вытягивается
         readonly property real squash: 1 + pip.voice * 0.05 * Math.sin(motion.phase * 9) + motion.hop * 0.06
@@ -123,7 +156,7 @@ Item {
                 width: hole.width * 0.6; height: width * 0.5
                 anchors.centerIn: parent
                 anchors.horizontalCenterOffset: pip.gazeX * hole.width * 0.12
-                anchors.verticalCenterOffset: pip.gazeY * hole.height * 0.12 - height * 0.02
+                anchors.verticalCenterOffset: pip.gazeY * hole.height * 0.12 - height * 0.02 + motion.nod * hole.height * 0.1
                 readonly property real u: width
                 readonly property color ink: Theme.text
 
