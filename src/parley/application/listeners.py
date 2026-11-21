@@ -13,6 +13,7 @@ from .commands import (
     SpeechEnded,
     SpeechProgressed,
     UserFinishedTalking,
+    UserPaused,
     UserStartedTalking,
 )
 
@@ -47,6 +48,9 @@ class SpeechReporter(_Reporter):
 class HearingReporter(_Reporter):
     def voice_started(self) -> None:
         self._run(UserStartedTalking())
+
+    def voice_paused(self, transcribing: bool) -> None:
+        self._run(UserPaused(transcribing))
 
     def voice_finished(self, utterance: Utterance | None) -> None:
         self._run(UserFinishedTalking(utterance))

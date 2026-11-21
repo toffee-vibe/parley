@@ -10,6 +10,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from ..domain.companion import Companion
+from ..domain.conversation import Utterance
 from ..domain.speech import Speech
 
 KEEP_SPEECHES = 50
@@ -20,6 +21,8 @@ class LiveState:
     companion: Companion = field(default_factory=Companion)
     speeches: OrderedDict[str, Speech] = field(default_factory=OrderedDict)
     waiting: list[Speech] = field(default_factory=list)  # ждут, пока человек договорит; ещё не отданы рту
+    turn: list[Utterance] = field(default_factory=list)   # распознанные куски хода, который ещё не окончен
+    transcribing: int = 0                                  # кусков в распознавании: пока они есть, ход не отдаём
 
     def remember(self, speech: Speech) -> None:
         self.speeches[speech.id] = speech

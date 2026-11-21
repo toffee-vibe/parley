@@ -117,7 +117,7 @@ class MicrophoneEars:
                     and not self._vad.has_pending():
                 self._voice_reported = False
                 self.diary.record("voice_lost")
-                self.listener.voice_finished(None)
+                self.listener.voice_paused(transcribing=False)
             return
         self._voice_since = now
         if self._voice_reported:
@@ -135,6 +135,7 @@ class MicrophoneEars:
         if not self._voice_reported:
             return  # фраза целиком была эхом или шумом во время речи персонажа
         self._voice_reported = False
+        self.listener.voice_paused(transcribing=True)
         started = datetime.now().astimezone() - timedelta(seconds=len(segment) / SAMPLE_RATE)
         self._transcribing.submit(self._transcribe, segment, started)
 

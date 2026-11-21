@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from ..domain.companion import Activity, Mood
-from ..domain.conversation import SoundNoticed, Utterance, heard
+from ..domain.conversation import SoundNoticed, UserSaying, Utterance, heard, joined
 from ..domain.learning import Mistake, MistakeKind, Phrase, ReviewOutcome, mistake_key
 from ..domain.memory import Fact
 from ..domain.shared import Aggregate
@@ -35,8 +35,10 @@ class Timing:
     """Тайминги разговора (из config.toml, раздел [conversation])."""
 
     reply_pause_s: float = 1.2      # сколько тишины после фразы человека, прежде чем говорить
+    turn_end_s: float = 2.5         # сколько молчать, чтобы мысль считалась законченной и ушла агенту
     thinking_patience_s: float = 25  # через сколько перестать «думать», если ответа нет
-    murmur_after_s: float = 1.6      # через сколько тишины отозваться «Hmm», пока Claude думает; 0 — никогда
+    murmur_after_s: float = 1.0      # через сколько после конца хода отозваться «Hmm», пока агент думает; 0 — никогда
+    stuck_transcription_s: float = 30  # распознавание не вернулось за столько — не ждём его, отдаём ход
 
 
 # --- слух ---
@@ -73,7 +75,16 @@ class UserStartedTalking:
 
 
 @dataclass(frozen=True)
+class UserPaused:
+    """Человек замолчал (детектор речи). Ход ещё не окончен — может, он подбирает слова."""
+
+    transcribing: bool  # кусок речи ушёл в распознавание, результат придёт командой UserFinishedTalking
+
+
+@dataclass(frozen=True)
 class UserFinishedTalking:
+    """Кусок речи распознан. Агенту он уйдёт вместе с остальными кусками хода, когда ход закончится."""
+
     utterance: Utterance | None  # None — оказалось шумом или распознать не удалось
 
 
@@ -196,6 +207,7 @@ class CommandHandlers:
         self.facts = facts
         self.timing = timing
         self.ears: Ears | None = None  # подставляется в bootstrap: уши и команды ссылаются друг на друга
+        self._transcribing_since = clock.now()
 
     def routes(self) -> dict[type, object]:
         return {
@@ -205,6 +217,7 @@ class CommandHandlers:
             OpenEars: self._open_ears,
             ToggleEars: self._toggle_ears,
             UserStartedTalking: self._user_started_talking,
+            UserPaused: self._user_paused,
             UserFinishedTalking: self._user_finished_talking,
             NoticeSound: self._notice_sound,
             Tick: self._tick,
@@ -236,6 +249,7 @@ class CommandHandlers:
 
     def _close_ears(self, _: CloseEars) -> None:
         self.companion.close_ears(self.clock.now())
+        self.state.turn.clear()  # недосказанное до выключения микрофона агенту не уходит
         self._stop(self.state.unfinished_speeches() + self.state.waiting)
         if self.ears:
             self.ears.close()
@@ -253,6 +267,7 @@ class CommandHandlers:
 
     def _partner_left(self, _: PartnerLeft) -> None:
         self.companion.partner_left(self.clock.now())
+        self.state.turn.clear()
         self._sync_microphone()
         self._publish(self.companion)
 
@@ -279,14 +294,32 @@ class CommandHandlers:
         self._after_stop(stopped)
         self._publish(self.companion)
 
+    def _user_paused(self, command: UserPaused) -> None:
+        self.companion.user_paused(self.clock.now())
+        if command.transcribing:
+            self.state.transcribing += 1
+            self._transcribing_since = self.clock.now()
+
     def _user_finished_talking(self, command: UserFinishedTalking) -> None:
-        now = self.clock.now()
+        """Кусок распознан: копим его в ходе. Агент получит всю мысль, когда ход закончится (_tick)."""
+        self.state.transcribing = max(0, self.state.transcribing - 1)
         utterance = command.utterance
-        if (utterance is not None and utterance.is_empty) or self.companion.activity is not Activity.HEARING:
-            utterance = None  # пустая фраза или слушать уже некому (Claude ушёл, слух выключили)
-        self.companion.user_finished_talking(now, said_something=utterance is not None)
+        if utterance is None or utterance.is_empty or not self.companion.listening:
+            return  # шум, пустая фраза или слушать уже некому (агент ушёл, слух выключили)
+        self.state.turn.append(utterance)
+        now = self.clock.now()
+        if self.companion.activity is Activity.HEARING:
+            self.journal.publish([UserSaying(at=now, text=joined(self.state.turn).text)])
+        else:
+            self._end_turn(now)  # кусок распознался уже после конца хода — не теряем его
+
+    def _end_turn(self, now: datetime) -> None:
+        """Мысль закончена: склеиваем куски и отдаём агенту одной фразой."""
+        turn, self.state.turn = self.state.turn, []
+        self.companion.user_finished_talking(now, said_something=bool(turn))
         self._publish(self.companion)
-        if utterance is not None:
+        if turn:
+            utterance = joined(turn)
             self.utterances.append(utterance)
             self.journal.publish([heard(utterance, now)])
 
@@ -297,6 +330,11 @@ class CommandHandlers:
 
     def _tick(self, _: Tick) -> None:
         now = self.clock.now()
+        if self.state.transcribing and now - self._transcribing_since > timedelta(
+                seconds=self.timing.stuck_transcription_s):
+            self.state.transcribing = 0  # распознавание зависло — не держим ход вечно
+        if not self.state.transcribing and self.companion.turn_is_over(now, timedelta(seconds=self.timing.turn_end_s)):
+            self._end_turn(now)
         self.companion.settle(now, timedelta(seconds=self.timing.thinking_patience_s))
         if self.state.waiting and self.companion.user_is_quiet(now, timedelta(seconds=self.timing.reply_pause_s)):
             for speech in self.state.waiting:

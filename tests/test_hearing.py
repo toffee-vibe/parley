@@ -43,3 +43,21 @@ def test_bad_key_is_not_hidden_by_fallback(monkeypatch):
         assert e.status == 401
     else:
         raise AssertionError("ошибка ключа должна дойти до пользователя")
+
+
+def test_prompt_leak_is_not_taken_for_speech():
+    from parley.config import OpenRouterSettings
+    from parley.infrastructure.openrouter import echoes_prompt
+
+    prompt = OpenRouterSettings().transcription_prompt
+    leaks = [  # дословно из дневника: модель вернула подсказку на тишине
+        "English speaking practice with Parley (Pip). The speaker is Russian and mixes English and Russian: "
+        "keep every word in the language it was spoken, do not translate.",
+        "Python, backend, PostgreSQL, FastAPI, Docker, deploy.",
+        "English speaking practice with Parley, Pip. The speaker is Russian and mixes English and Russian. "
+        "Keep every word in the language it was spoken. Do not translate.",
+    ]
+    assert all(echoes_prompt(t, prompt) for t in leaks)
+    real = ["I worked with Python and PostgreSQL on the backend", "Так, ну, давай начнем с времен на английском.",
+            "I made it.", "Do not translate this sentence, just tell me what it means"]
+    assert not any(echoes_prompt(t, prompt) for t in real)

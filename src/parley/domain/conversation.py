@@ -65,6 +65,20 @@ class UserSaid(DomainEvent):
 
 
 @dataclass(frozen=True, kw_only=True)
+class UserSaying(DomainEvent):
+    """Часть хода уже распознана, а ход ещё идёт — для экрана (агент получит всю мысль одним `heard`)."""
+
+    kind = "hearing_text"
+    text: str
+
+
+def joined(parts: list[Utterance]) -> Utterance:
+    """Куски одного хода (детектор речи режет фразу по коротким паузам) — одной фразой."""
+    return Utterance(" ".join(p.text.strip() for p in parts), parts[0].started_at,
+                     sum(p.duration_s for p in parts))
+
+
+@dataclass(frozen=True, kw_only=True)
 class SoundNoticed(DomainEvent):
     """Не речь: смех, кашель, клавиатура, музыка, стук…"""
 

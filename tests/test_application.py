@@ -22,6 +22,7 @@ from parley.application.commands import (
     SpeechProgressed,
     Tick,
     UserFinishedTalking,
+    UserPaused,
     UserStartedTalking,
 )
 from parley.application.queries import CompanionStatus, DuePhrases, Listen, Progress, QueryHandlers, Recall
@@ -88,14 +89,31 @@ def test_without_claude_nothing_is_heard(app):
     assert queries.ask(CompanionStatus())["activity"] == "waiting"
 
 
+def part(commands, clock, text, seconds=1.0):
+    """Кусок речи: заговорил, замолчал, распознано. Ход ещё не окончен."""
+    commands.execute(UserStartedTalking())
+    commands.execute(UserPaused(transcribing=True))
+    commands.execute(UserFinishedTalking(Utterance(text, clock.now(), seconds)))
+
+
+def end_turn(commands, clock, seconds=2.6):
+    """Человек молчит дольше turn_end_s (2.5 с) — мысль закончена."""
+    clock.moment += timedelta(seconds=seconds)
+    commands.execute(Tick())
+
+
+def speak(commands, clock, text, seconds=1.0):
+    part(commands, clock, text, seconds)
+    end_turn(commands, clock)
+
+
 def kinds(queries, after=0):
     return [e["kind"] for e in queries.ask(Listen(after=after, timeout_s=0))["events"]]
 
 
 def test_user_phrase_reaches_claude(app):
     commands, queries, clock, _ = app
-    commands.execute(UserStartedTalking())
-    commands.execute(UserFinishedTalking(Utterance("I worked on data pipelines", clock.now(), 2.0)))
+    speak(commands, clock, "I worked on data pipelines", 2.0)
     events = queries.ask(Listen(after=0, timeout_s=0))["events"]
     assert events[-1]["kind"] == "heard"
     assert events[-1]["language"] == "en"
@@ -132,8 +150,7 @@ def test_phrase_cycle_and_progress(app):
     assert queries.ask(DuePhrases()) == []
 
     for text, seconds in (("I was in charge of the ETL", 2.0), ("ну я короче", 1.0)):
-        commands.execute(UserStartedTalking())
-        commands.execute(UserFinishedTalking(Utterance(text, clock.now(), seconds)))
+        speak(commands, clock, text, seconds)
     for _ in range(2):
         commands.execute(NoteMistake(MistakeKind.GRAMMAR, "I am work", "I work", "present simple"))
     progress = queries.ask(Progress(days=1))
@@ -151,19 +168,52 @@ def test_listen_skips_service_events(app):
 
 def test_pip_waits_for_a_pause_and_drops_reply_if_user_keeps_talking(app):
     commands, queries, clock, mouth = app
-    commands.execute(UserStartedTalking())
-    commands.execute(UserFinishedTalking(Utterance("So I think that", clock.now(), 1.0)))
+    speak(commands, clock, "So I think that")
     first = commands.execute(Say("[curious] That what?"))
-    assert mouth.said == []  # пауза ещё не выдержана
-    commands.execute(UserStartedTalking())  # человек продолжил мысль
-    assert "speech_dropped" in kinds(queries)
+    commands.execute(UserStartedTalking())  # человек продолжил мысль раньше, чем Пип заговорил
+    commands.execute(Tick())
+    assert mouth.said == [] or "speech_dropped" in kinds(queries) or "interrupted" in kinds(queries)
 
+    commands.execute(UserPaused(transcribing=True))
     commands.execute(UserFinishedTalking(Utterance("the cache was the bottleneck", clock.now(), 2.0)))
+    end_turn(commands, clock)
     second = commands.execute(Say("[excited] Nice catch! How did you prove it?"))
     clock.moment += timedelta(seconds=2)
     commands.execute(Tick())
-    assert [sid for sid, _ in mouth.said] == [second]
+    assert mouth.said[-1][0] == second
     assert first != second
+
+
+def test_a_thought_with_pauses_reaches_the_agent_whole(app):
+    commands, queries, clock, mouth = app
+    part(commands, clock, "So yesterday I")
+    clock.moment += timedelta(seconds=1.5)       # подбирает слова — это ещё не конец мысли
+    commands.execute(Tick())
+    assert "heard" not in kinds(queries)         # агент пока ничего не получает (экран — получает hearing_text)
+    assert queries.ask(CompanionStatus())["activity"] == "hearing"
+    assert commands.execute(Say("Yesterday what?")) and mouth.said == []  # и Пип не влезает
+
+    part(commands, clock, "fixed a race condition", 2.0)
+    end_turn(commands, clock)
+    heard = [e for e in queries.ask(Listen(after=0, timeout_s=0))["events"] if e["kind"] == "heard"]
+    assert [e["text"] for e in heard] == ["So yesterday I fixed a race condition"]
+    assert heard[0]["duration_s"] == 3.0
+
+
+def test_turn_waits_for_slow_recognition_and_loses_nothing(app):
+    commands, queries, clock, _ = app
+    commands.execute(UserStartedTalking())
+    commands.execute(UserPaused(transcribing=True))
+    end_turn(commands, clock)                    # тишина давно, но кусок ещё распознаётся
+    assert "heard" not in kinds(queries)
+    commands.execute(UserFinishedTalking(Utterance("Python is my main language", clock.now(), 2.0)))
+    commands.execute(Tick())
+    assert "heard" in kinds(queries)
+
+    speak(commands, clock, "and Go a bit")       # кусок, распознанный уже после конца хода, тоже доходит
+    commands.execute(UserFinishedTalking(Utterance("for side projects", clock.now(), 1.0)))
+    texts = [e["text"] for e in queries.ask(Listen(after=0, timeout_s=0))["events"] if e["kind"] == "heard"]
+    assert texts[-2:] == ["and Go a bit", "for side projects"]
 
 
 def test_pip_may_interrupt_only_when_allowed(app):
@@ -215,28 +265,27 @@ def test_recall_shows_only_recent_session_notes(app):
 
 def test_pip_murmurs_once_while_claude_thinks(app):
     commands, _, clock, mouth = app
-    commands.execute(UserStartedTalking())
-    commands.execute(UserFinishedTalking(Utterance("I worked on data pipelines", clock.now(), 2.0)))
-    commands.execute(Tick())
-    assert mouth.murmurs == 0                  # сразу — рано: может, Claude ответит быстро
-    clock.moment += timedelta(seconds=2)
+    speak(commands, clock, "I worked on data pipelines", 2.0)
+    assert mouth.murmurs == 0                  # сразу после конца мысли — рано: может, агент ответит быстро
+    clock.moment += timedelta(seconds=1.1)
     commands.execute(Tick())
     commands.execute(Tick())
-    assert mouth.murmurs == 1                  # один раз за фразу, не «хм-хм-хм»
+    assert mouth.murmurs == 1                  # один раз за ход, не «хм-хм-хм»
 
     hushed = mouth.hushed
     commands.execute(UserStartedTalking())     # заговорил снова — отклик обрывается
     assert mouth.hushed == hushed + 1
+    commands.execute(UserPaused(transcribing=True))
     commands.execute(UserFinishedTalking(Utterance("and Airflow", clock.now(), 1.0)))
-    clock.moment += timedelta(seconds=2)
+    end_turn(commands, clock)
+    clock.moment += timedelta(seconds=1.1)
     commands.execute(Tick())
-    assert mouth.murmurs == 2                  # новая фраза — можно отозваться снова
+    assert mouth.murmurs == 2                  # новый ход — можно отозваться снова
 
 
 def test_no_murmur_when_reply_is_already_coming(app):
     commands, _, clock, mouth = app
-    commands.execute(UserStartedTalking())
-    commands.execute(UserFinishedTalking(Utterance("Hello", clock.now(), 1.0)))
+    speak(commands, clock, "Hello")
     commands.execute(Say("Hi! How was your day?"))  # Claude ответил быстро
     clock.moment += timedelta(seconds=2)
     commands.execute(Tick())

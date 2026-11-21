@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import time
 from typing import Any
 
@@ -61,7 +62,12 @@ class OpenRouter:
             body["prompt"] = self.settings.transcription_prompt
         note = {"model": model, "audio_s": round(len(samples) / sample_rate, 2)}
         data = self._post("/audio/transcriptions", body, "stt", note).json()
-        return (data.get("text") or "").strip()
+        text = (data.get("text") or "").strip()
+        if self.settings.transcription_prompt and echoes_prompt(text, self.settings.transcription_prompt):
+            # На тишине и шуме модель иногда возвращает саму подсказку — это не речь человека
+            self.diary.record("stt_discarded", text=text[:200], audio_s=note["audio_s"], reason="prompt")
+            return ""
+        return text
 
     def speech(self, text: str, voice_id: str = "") -> bytes:
         """Синтез речи в mp3. voice_id — голос из библиотеки Fish Audio; пусто — голос модели по умолчанию."""
@@ -88,6 +94,23 @@ class OpenRouter:
         self.diary.record(kind, **note, ms=_ms(started), provider=resp.headers.get("x-openrouter-provider"),
                           **_usage(resp))
         return resp
+
+
+_WORD = re.compile(r"[\w'-]+")
+
+
+def echoes_prompt(text: str, prompt: str, n: int = 4) -> bool:
+    """Распознанное — пересказ подсказки: больше половины слов идут подряд кусками по n слов из неё."""
+    words = [w.lower() for w in _WORD.findall(text)]
+    if len(words) < n:
+        return False
+    source = [w.lower() for w in _WORD.findall(prompt)]
+    grams = {tuple(source[i:i + n]) for i in range(len(source) - n + 1)}
+    covered = set()
+    for i in range(len(words) - n + 1):
+        if tuple(words[i:i + n]) in grams:
+            covered.update(range(i, i + n))
+    return len(covered) >= len(words) / 2
 
 
 def _ms(started: float) -> int:

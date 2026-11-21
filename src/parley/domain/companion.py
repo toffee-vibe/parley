@@ -8,7 +8,12 @@
     speaking  — компаньон говорит
     deaf      — пользователь выключил компаньону слух (например, ушёл в Discord)
 
-Пока Claude думает над ответом, компаньон не молчит мёртво: через пару секунд тишины он один раз
+Ход пользователя. Фраза режется детектором речи на куски по коротким паузам, но агенту уходит
+только целая мысль: ход заканчивается, когда человек молчит дольше `turn_end` (`turn_is_over`).
+До этого компаньон остаётся в `hearing` — слушает и не может заговорить, даже если человек
+задумался посреди фразы.
+
+Пока Claude думает над ответом, компаньон не молчит мёртво: вскоре после конца хода он один раз
 отзывается коротким «Hmm» / «Right» (`wants_to_murmur`) — как живой собеседник, который услышал и думает.
 
 Ещё компаньон умеет показывать доску: табличку, правило, пример — и тогда отходит в сторону.
@@ -83,6 +88,7 @@ class Companion(Aggregate):
     mood: Mood = Mood.NEUTRAL
     since: datetime | None = None           # когда началось текущее состояние
     voice_ended_at: datetime | None = None  # когда пользователь последний раз замолчал
+    voice_active: bool = False              # пользователь говорит прямо сейчас (а не сделал паузу)
     board_open: bool = False
     ears_open: bool = True                  # выбор пользователя: кнопка микрофона
     partner_here: bool = False              # подключён ли Claude — тот, кто слушает и отвечает
@@ -105,6 +111,7 @@ class Companion(Aggregate):
         """Ушёл Claude — договорить начатое можно, но слушать и «думать» больше незачем."""
         if self.partner_here:
             self.partner_here = False
+            self.voice_active = False
             if self.ears_open and self.activity is not Activity.SPEAKING:
                 self._become(Activity.WAITING, now)
 
@@ -113,6 +120,7 @@ class Companion(Aggregate):
     def close_ears(self, now: datetime) -> None:
         if self.ears_open:
             self.ears_open = False
+            self.voice_active = False
             self._become(Activity.DEAF, now)
             self._record(EarsClosed(at=now))
 
@@ -124,12 +132,25 @@ class Companion(Aggregate):
 
     def user_started_talking(self, now: datetime) -> None:
         if self.listening:
+            self.voice_active = True
             self._become(Activity.HEARING, now)
 
-    def user_finished_talking(self, now: datetime, said_something: bool) -> None:
-        """said_something=False — это был шум или пустая фраза: возвращаемся в покой."""
-        if self.activity is Activity.HEARING:
+    def user_paused(self, now: datetime) -> None:
+        """Человек замолчал. Ход ещё не окончен: может, он просто подбирает слова."""
+        if self.voice_active:
+            self.voice_active = False
             self.voice_ended_at = now
+
+    def turn_is_over(self, now: datetime, turn_end: timedelta) -> bool:
+        """Человек молчит дольше turn_end — мысль закончена, её можно отдавать агенту."""
+        return (self.activity is Activity.HEARING and not self.voice_active and self.voice_ended_at is not None
+                and now - self.voice_ended_at >= turn_end)
+
+    def user_finished_talking(self, now: datetime, said_something: bool) -> None:
+        """Ход окончен. said_something=False — это был шум или пустая фраза: возвращаемся в покой."""
+        if self.activity is Activity.HEARING:
+            self.voice_active = False
+            self.voice_ended_at = self.voice_ended_at or now
             self.murmured = False
             self._become(Activity.THINKING if said_something else self._resting(), now)
 
@@ -140,9 +161,9 @@ class Companion(Aggregate):
         return self.voice_ended_at is None or now - self.voice_ended_at >= pause
 
     def wants_to_murmur(self, now: datetime, after: timedelta) -> bool:
-        """Фраза услышана, Claude думает, человек молчит уже `after` — пора отозваться (один раз за фразу)."""
-        return (self.activity is Activity.THINKING and not self.murmured and self.voice_ended_at is not None
-                and now - self.voice_ended_at >= after)
+        """Ход окончен, агент думает уже `after` — пора отозваться (один раз за ход)."""
+        return (self.activity is Activity.THINKING and not self.murmured and self.since is not None
+                and now - self.since >= after)
 
     def murmur(self) -> None:
         self.murmured = True

@@ -153,8 +153,8 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
     mouth = QueuedMouth(voice, SpeechReporter(commands), v.output, on_level=levels.set_voice, volume=volume,
                         murmurs=murmurs)
 
-    timing = Timing(reply_pause_s=settings.conversation.reply_pause_s,
-                    murmur_after_s=settings.conversation.murmur_after_s)
+    c = settings.conversation
+    timing = Timing(reply_pause_s=c.reply_pause_s, turn_end_s=c.turn_end_s, murmur_after_s=c.murmur_after_s)
     handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, facts, timing)
     for message, handler in handlers.routes().items():
         commands.register(message, handler)
