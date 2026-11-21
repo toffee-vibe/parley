@@ -1,0 +1,30 @@
+name: Что-то не работает
+description: Ошибка, падение, не слышит, не говорит, не подключается агент
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Что делал, что ожидал, что получилось.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Вывод `uv run parley doctor`
+      description: Система, звук, устройства, Qt, агенты. Ключей там нет.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Лог запуска `uv run parley -v`
+      description: Хвост вывода в терминале до и после ошибки.
+      render: text
+  - type: textarea
+    id: report
+    attributes:
+      label: Вывод `uv run parley report` (если проблема в разговоре)
+      description: Распознавание, задержки, сбои за сегодня. Там есть твои фразы — убери лишнее, если нужно.
+      render: text

@@ -27,9 +27,9 @@ from ...application.ports import HearingListener, Recorder
 from ...config import HearingSettings
 from ...domain.conversation import Utterance
 from ..diary import NullDiary
+from .devices import CHUNK, Microphone
 from .models import LocalModels
 from .pcm import SAMPLE_RATE, rms
-from .pipewire import CHUNK, Microphone
 
 log = logging.getLogger(__name__)
 

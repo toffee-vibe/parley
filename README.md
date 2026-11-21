@@ -27,7 +27,11 @@ Claude слышит твой микрофон и отвечает вслух: в
 
 ## Запуск
 
+Работает на **Linux, Windows и macOS** (Apple Silicon и Intel, macOS 14+). Нужен только
+[uv](https://docs.astral.sh/uv/getting-started/installation/) — нужный Python он скачает сам.
+
 ```bash
+git clone <адрес репозитория> parley && cd parley
 uv run parley                    # окно + MCP-сервер в фоне
 uv run parley agents              # проверить, к каким агентам подключён Parley
 ```
@@ -45,6 +49,19 @@ uv run parley agents              # проверить, к каким агент
    Порт в этих файлах — 8790; поменял `[server] port` в конфиге — поменяй и в них.
 3. Локальные модели (детектор речи, классификатор звуков, запасной голос) скачиваются при первом
    использовании в `~/.local/share/parley/models`.
+
+### Windows и macOS
+
+- **Звук** идёт через PortAudio (библиотека `sounddevice`, ставится сама). На Linux с PipeWire — через PipeWire,
+  на Linux без него нужен пакет `libportaudio2`. Выбрать вручную: `PARLEY_AUDIO=portaudio` или `pipewire`.
+- **Устройства.** Пусто в `[hearing] input` / `[voice] output` — системные по умолчанию. Другое — впиши часть
+  имени устройства, список: `uv run python -m sounddevice`.
+- **macOS:** при первом запуске система спросит доступ к микрофону для терминала — разреши
+  (Системные настройки → Конфиденциальность → Микрофон).
+- **Файлы** лежат там же, где на Linux: `~/.config/parley/config.toml` и `~/.local/share/parley/`
+  (на Windows `~` — это `C:\Users\<имя>`).
+- **Не работает?** Открой issue и приложи вывод `uv run parley doctor` — там система, звук, устройства и Qt,
+  без ключей. Проверка в GitHub Actions собирает Parley на всех трёх системах на каждый коммит.
 
 На NixOS Qt из колеса PySide6 не находит пару системных библиотек; Parley сам подгружает их из
 `/nix/store` (`interfaces/gui/nixos.py`). Насовсем: добавь `krb5` и `brotli` в `programs.nix-ld.libraries`.

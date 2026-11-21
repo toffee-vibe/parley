@@ -1,4 +1,4 @@
-"""Захват и воспроизведение через утилиты PipeWire (pw-record / pw-play).
+"""Linux: захват и воспроизведение через утилиты PipeWire (pw-record / pw-play). Выбирает devices.py.
 
 Подпроцессы вместо нативных биндингов: ничего не нужно собирать, легко отлаживать
 (`pw-record --raw - | ...` можно запустить руками), а оборвать звук — просто terminate().
@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import logging
 import subprocess
 import threading
@@ -15,26 +14,13 @@ from collections.abc import Callable
 
 import numpy as np
 
+from .devices import CHUNK, Volume
 from .pcm import SAMPLE_RATE, from_s16, to_s16
 
 log = logging.getLogger(__name__)
 
-CHUNK = 512  # 32 мс при 16 кГц — ровно окно детектора речи Silero
 _FEED_S = 0.04        # звук отдаётся плееру кусочками: новая громкость слышна почти сразу
 _PIPE_BYTES = 4096    # маленький буфер трубы — по той же причине (по умолчанию 64 КБ ≈ 1.3 с)
-
-
-class Volume:
-    """Громкость голоса 0..1. Меняет интерфейс, читает плеер прямо во время фразы."""
-
-    def __init__(self, value: float = 0.6):
-        self.value = value
-
-    def set(self, value: float) -> None:
-        self.value = min(max(value, 0.0), 1.0)
-
-    def gain(self) -> float:
-        return self.value ** 2  # слух воспринимает громкость нелинейно: так ползунок ощущается ровным
 
 
 class Microphone:
@@ -105,8 +91,10 @@ class Playback:
             cmd += ["--target", target]
         self._proc = subprocess.Popen([*cmd, "-"], stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
+            import fcntl  # только Linux: на других системах этот модуль не используется
+
             fcntl.fcntl(self._proc.stdin, fcntl.F_SETPIPE_SZ, _PIPE_BYTES)
-        except OSError:
+        except (ImportError, OSError, AttributeError):
             pass
         self._started = time.monotonic()
         threading.Thread(target=self._feed, args=(samples,), daemon=True).start()

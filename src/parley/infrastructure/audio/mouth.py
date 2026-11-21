@@ -19,9 +19,9 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from ...application.ports import SpeechListener
+from .devices import Playback, PlaybackPort, Volume
 from .murmurs import Murmurs
 from .pcm import envelope, normalized
-from .pipewire import Playback, Volume
 from .voices import Voice, language_runs
 
 log = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ class QueuedMouth:
         self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._cancelled: set[str] = set()
         self._speaking_id: str | None = None
-        self._current: Playback | None = None
+        self._current: PlaybackPort | None = None
         self._synth = ThreadPoolExecutor(max_workers=1, thread_name_prefix="synth")
         threading.Thread(target=self._run, name="mouth", daemon=True).start()
 

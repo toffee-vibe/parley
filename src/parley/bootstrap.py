@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -17,11 +18,11 @@ from .application.listeners import HearingReporter, SpeechReporter
 from .application.queries import QueryHandlers
 from .application.state import LiveState
 from .config import Settings
+from .infrastructure.audio.devices import Volume, backend
 from .infrastructure.audio.ears import MicrophoneEars
 from .infrastructure.audio.models import LocalModels
 from .infrastructure.audio.mouth import QueuedMouth
 from .infrastructure.audio.murmurs import Murmurs
-from .infrastructure.audio.pipewire import Volume
 from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, VoiceChain
 from .infrastructure.clock import SystemClock
 from .infrastructure.diary import Diary
@@ -105,11 +106,11 @@ class Parley:
         o, v = self.settings.openrouter, self.settings.voice
         self.diary.record("session_start", stt=o.transcription_model, stt_fallback=o.fallback_transcription_model,
                           tts=o.voice_model if self.cloud_ready else "", voices=[v.english, v.russian],
-                          volume=self.volume.value)
+                          volume=self.volume.value, audio=backend(), platform=sys.platform)
         self.server.start()
         self.commands.execute(OpenEars())
         self._pulse.start()
-        log.info("Parley слушает. MCP: %s/mcp", self.settings.server.url)
+        log.info("Parley слушает (звук: %s). MCP: %s/mcp", backend(), self.settings.server.url)
 
     def stop(self) -> None:
         self.diary.record("session_end", minutes=round((time.monotonic() - self._started) / 60, 1))

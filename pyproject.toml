@@ -9,11 +9,12 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1",
-    "mcp[cli]>=2.3.0",
+    "mcp>=2.3.0",
     "numpy>=2.5.5",
     "pyside6>=6.12.0",
     "sherpa-onnx>=1.12,<2",
     "sherpa-onnx-core==1.13.8",
+    "sounddevice>=0.5",
     "uvicorn>=0.54.0",
 ]
 
@@ -46,3 +47,8 @@ testpaths = ["tests"]
 files = ["src/parley/domain", "src/parley/application"]
 ignore_missing_imports = true
 check_untyped_defs = true
+
+[tool.uv]
+# У cryptography ≥49 нет сборок для Intel-маков (а собирать её из исходников — нужен Rust).
+# Её тянет mcp (pyjwt[crypto]); на Intel-маках берём последнюю версию с готовой сборкой.
+constraint-dependencies = ["cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'"]
