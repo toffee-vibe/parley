@@ -41,6 +41,17 @@ fallback_en = "en_US-ryan-medium"     # локальный Piper, если об�
 fallback_ru = "ru_RU-dmitri-medium"
 output = ""                          # колонки: имя выхода PipeWire или часть имени устройства (Windows/macOS); пусто — по умолчанию
 
+[transcription]
+# Кто распознаёт твою речь:
+#   auto  — облако, если задан ключ OpenRouter, иначе встроенная модель (по умолчанию)
+#   cloud — облако (OpenRouter, модель выше): точнее всего, ~$0.11 за час твоей речи
+#   local — встроенная модель на этом компьютере: бесплатно и без сети; один раз скачивается ~500 МБ
+# Если облако не ответило (нет сети, кончились деньги) — фраза уходит во встроенную модель.
+engine = "auto"
+# Встроенная модель: parakeet (Parakeet TDT 0.6b v3: русский, английский и смесь; ~0.3 с на фразу)
+#                    whisper-turbo (чуть хуже на смешанной речи и в ~10 раз медленнее)
+local_model = "parakeet"
+
 [hearing]
 input = ""                # микрофон: имя источника PipeWire или часть имени устройства (Windows/macOS); пусто — по умолчанию
 vad_threshold = 0.5       # чувствительность детектора речи (0..1)
@@ -84,6 +95,12 @@ class VoiceSettings:
 
 
 @dataclass
+class TranscriptionSettings:
+    engine: str = "auto"            # auto | cloud | local
+    local_model: str = "parakeet"   # parakeet | whisper-turbo
+
+
+@dataclass
 class HearingSettings:
     input: str = ""
     vad_threshold: float = 0.5
@@ -115,6 +132,7 @@ class Settings:
     openrouter: OpenRouterSettings = field(default_factory=OpenRouterSettings)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     hearing: HearingSettings = field(default_factory=HearingSettings)
+    transcription: TranscriptionSettings = field(default_factory=TranscriptionSettings)
     conversation: ConversationSettings = field(default_factory=ConversationSettings)
     server: ServerSettings = field(default_factory=ServerSettings)
 
@@ -146,6 +164,7 @@ def load() -> Settings:
         openrouter=_section(OpenRouterSettings, raw.get("openrouter")),
         voice=_section(VoiceSettings, raw.get("voice")),
         hearing=_section(HearingSettings, raw.get("hearing")),
+        transcription=_section(TranscriptionSettings, raw.get("transcription")),
         conversation=_section(ConversationSettings, raw.get("conversation")),
         server=_section(ServerSettings, raw.get("server")),
     )

@@ -25,6 +25,8 @@ class OpenRouterError(RuntimeError):
 
 
 class OpenRouter:
+    name = "openrouter"
+
     def __init__(self, settings: OpenRouterSettings, diary: Recorder | None = None):
         self.settings = settings
         self.diary = diary or NullDiary()

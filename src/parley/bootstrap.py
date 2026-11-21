@@ -20,6 +20,7 @@ from .application.state import LiveState
 from .config import PROJECT_DIR, Settings
 from .infrastructure.audio.devices import Volume, backend
 from .infrastructure.audio.ears import MicrophoneEars
+from .infrastructure.audio.local_stt import FirstThatWorks, LocalTranscriber, Transcriber
 from .infrastructure.audio.models import LocalModels
 from .infrastructure.audio.mouth import QueuedMouth
 from .infrastructure.audio.murmurs import Murmurs
@@ -105,7 +106,7 @@ class Parley:
     def start(self) -> None:
         self._started = time.monotonic()
         o, v = self.settings.openrouter, self.settings.voice
-        self.diary.record("session_start", stt=o.transcription_model, stt_fallback=o.fallback_transcription_model,
+        self.diary.record("session_start", stt=stt_engine(self.settings), stt_cloud=o.transcription_model, stt_fallback=o.fallback_transcription_model,
                           tts=o.voice_model if self.cloud_ready else "", voices=[v.english, v.russian],
                           volume=self.volume.value, audio=backend(), platform=sys.platform)
         self.server.start()
@@ -164,7 +165,8 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
         murmurs.prepare_in_background()
     closers: list[Callable[[], None]] = [mouth.close]
     if with_microphone:
-        handlers.ears = MicrophoneEars(settings.hearing, models, openrouter, HearingReporter(commands),
+        handlers.ears = MicrophoneEars(settings.hearing, models, transcriber(settings, openrouter, models, diary),
+                                       HearingReporter(commands),
                                        companion_speaking=lambda: mouth.busy, voice_level=lambda: levels.voice,
                                        on_level=levels.set_hearing, diary=diary)
         closers.append(handlers.ears.close)
@@ -176,3 +178,21 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
     mcp = build_server(commands, queries, journal, settings.server.url, presence, diary)
     server = BackgroundServer(mcp, settings.server.host, settings.server.port)
     return Parley(settings, commands, queries, journal, presence, levels, voice, volume, server, closers, diary)
+
+
+def stt_engine(settings: Settings) -> str:
+    """Кто распознаёт речь: cloud или local (auto — облако, если есть ключ)."""
+    engine = settings.transcription.engine.strip().lower()
+    if engine not in ("cloud", "local"):
+        engine = "cloud" if settings.openrouter.api_key else "local"
+    return engine
+
+
+def transcriber(settings: Settings, openrouter: OpenRouter, models: LocalModels, diary: Diary) -> Transcriber:
+    """Облако с подстраховкой встроенной моделью (если она уже скачана) или только встроенная модель."""
+    model = settings.transcription.local_model
+    if stt_engine(settings) == "local":
+        local = LocalTranscriber(models, model, diary)
+        local.prepare_in_background()  # скачать (~500 МБ при первом запуске) и загрузить, пока ты не заговорил
+        return local
+    return FirstThatWorks(openrouter, LocalTranscriber(models, model, diary, download=False))

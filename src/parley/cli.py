@@ -173,7 +173,10 @@ def _doctor(settings: config.Settings) -> None:
     line("конфиг", f"{config.CONFIG_FILE} ({'есть' if config.CONFIG_FILE.exists() else 'нет'})")
     line("данные", config.DATA_DIR)
     line("ключ OpenRouter", "задан" if settings.openrouter.api_key else "НЕ задан")
-    line("распознавание", settings.openrouter.transcription_model)
+    from .bootstrap import stt_engine
+    engine = stt_engine(settings)
+    line("распознавание", f"{engine}: " + (settings.openrouter.transcription_model if engine == "cloud"
+                                         else f"встроенная {settings.transcription.local_model}"))
 
     from .infrastructure.audio.devices import backend
     line("звук", backend())
