@@ -33,6 +33,8 @@ def _sd() -> Any:
     except OSError as e:  # sounddevice есть, а самой библиотеки PortAudio в системе нет (Linux)
         raise RuntimeError("Не найдена библиотека PortAudio: установи libportaudio2 (Debian/Ubuntu) "
                            "или portaudio (Fedora, Arch, Homebrew)") from e
+    except Exception as e:  # noqa: BLE001 — PortAudio не запустился: нет звукового сервера или устройств
+        raise RuntimeError(f"PortAudio не запустился: {e}") from e
     return sounddevice
 
 
