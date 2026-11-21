@@ -1,0 +1,5 @@
+# Parley для Codex — только в этой папке. Codex читает этот файл, когда проект отмечен доверенным
+# (спрашивает при первом запуске здесь). Порт — как в [server] ~/.config/parley/config.toml.
+[mcp_servers.parley]
+url = "http://127.0.0.1:8790/mcp"
+tool_timeout_sec = 120   # listen ждёт событий до 55 с, say с wait=true — до 90 с

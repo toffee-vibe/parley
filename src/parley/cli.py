@@ -5,7 +5,10 @@
     parley ears toggle     выключить/включить слух (для хоткея); также open / close
     parley status          состояние персонажа
     parley report [-d N]   как работало приложение за N дней: распознавание, цена, задержки, сбои, заметки Claude
-    parley connect-claude  зарегистрировать MCP-сервер в Claude Code (user scope)
+    parley agents [--clean]  где подключён Parley; --clean — убрать глобальные регистрации
+
+Агенты подключаются к Parley только в папке проекта: .mcp.json (Claude Code), .codex/config.toml (Codex),
+opencode.json (opencode). Глобально Parley не регистрируется — иначе к нему стучится каждый агент на машине.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
+from pathlib import Path
 
 from . import config
 
@@ -33,7 +37,8 @@ def main() -> None:
     sub.add_parser("status", help="состояние персонажа")
     report = sub.add_parser("report", help="сводка технического дневника")
     report.add_argument("-d", "--days", type=int, default=1, help="за сколько дней (по умолчанию — сегодня)")
-    sub.add_parser("connect-claude", help="подключить к Claude Code")
+    agents = sub.add_parser("agents", help="где подключён Parley (Claude Code, Codex, opencode)")
+    agents.add_argument("--clean", action="store_true", help="убрать глобальные регистрации Parley")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -58,8 +63,8 @@ def main() -> None:
         case "report":
             from .infrastructure.diary import summarize
             print(summarize(settings.diary_dir, args.days))
-        case "connect-claude":
-            _connect_claude(settings)
+        case "agents":
+            _agents(clean=args.clean)
 
 
 def _exit(code: int) -> None:
@@ -91,10 +96,43 @@ def _request(settings: config.Settings, path: str, method: str = "GET") -> str:
         sys.exit(f"Parley не запущен ({e})")
 
 
-def _connect_claude(settings: config.Settings) -> None:
-    if not shutil.which("claude"):
-        sys.exit("Не найден claude (Claude Code)")
-    url = f"{settings.server.url}/mcp"
-    subprocess.run(["claude", "mcp", "remove", "--scope", "user", "parley"], capture_output=True)
-    subprocess.run(["claude", "mcp", "add", "--scope", "user", "--transport", "http", "parley", url], check=True)
-    print(f"Готово: Claude Code будет подключаться к {url}. Перезапусти сессию claude.")
+PROJECT = Path(__file__).resolve().parents[2]  # корень репозитория (src/parley/cli.py → ../..)
+
+# Где каждый агент берёт MCP-серверы проекта и как убрать глобальную регистрацию.
+AGENTS = {
+    "claude": (".mcp.json", ["claude", "mcp", "remove", "--scope", "user", "parley"]),
+    "codex": (".codex/config.toml", ["codex", "mcp", "remove", "parley"]),
+    "opencode": ("opencode.json", None),
+}
+
+
+def _agents(clean: bool) -> None:
+    print(f"Parley подключается к агентам только в {PROJECT}\n")
+    for agent, (project_file, remove) in AGENTS.items():
+        installed = shutil.which(agent) is not None
+        here = (PROJECT / project_file).exists()
+        global_ = _registered_globally(agent) if installed else False
+        line = f"  {agent:9} {'установлен' if installed else 'не установлен':14} проект: {project_file} {'✓' if here else '✗ нет файла'}"
+        if global_:
+            line += "  ⚠ зарегистрирован глобально"
+            if clean and remove:
+                done = subprocess.run(remove, capture_output=True, cwd=Path.home()).returncode == 0
+                line += " → убран" if done else " → убрать не вышло"
+            elif clean:
+                line += " → убери вручную из глобального конфига"
+        print(line)
+    print("\nClaude Code при первом запуске в папке спросит, разрешить ли сервер parley из .mcp.json.")
+    print("Codex читает .codex/config.toml, только если проект отмечен доверенным (спросит при первом запуске).")
+
+
+def _registered_globally(agent: str) -> bool:
+    """Есть ли parley в настройках агента вне этой папки (запускаем агента из домашней папки)."""
+    command = {"claude": ["claude", "mcp", "get", "parley"], "codex": ["codex", "mcp", "get", "parley"],
+               "opencode": ["opencode", "mcp", "list"]}[agent]
+    try:
+        out = subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=Path.home())
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if agent == "opencode":
+        return "parley" in out.stdout
+    return out.returncode == 0 and "parley" in out.stdout

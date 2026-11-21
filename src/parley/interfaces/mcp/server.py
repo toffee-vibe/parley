@@ -92,6 +92,15 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         presence.touched()
         return queries.ask(query)
 
+    # --- с чего начать ---
+
+    @mcp.tool(name="instructions")
+    def read_instructions() -> str:
+        """How to be Pip: how to hear and talk, the teaching method, memory. Read it first if your client did not
+        show you Parley's server instructions (some agents don't pass them to the model)."""
+        presence.touched()
+        return instructions
+
     # --- слух и речь ---
 
     @mcp.tool()
