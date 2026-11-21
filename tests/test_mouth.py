@@ -110,3 +110,31 @@ def test_mouth_speaks_language_pieces_and_counts_progress_in_original_text(monke
     wait_until(lambda: ("ended", "s1") in listener.log)
     progress = [c for kind, c in listener.log if kind == "progress"]
     assert progress[-1] <= len(text) + 1
+
+
+def test_murmurs_are_cached_and_do_not_repeat(tmp_path):
+    import numpy as np
+
+    from parley.infrastructure.audio.murmurs import Murmurs
+
+    class CountingVoice:
+        name = "fake"
+        calls = 0
+
+        def synthesize(self, text):
+            CountingVoice.calls += 1
+            seconds = 3.0 if text == "Long." else 0.4
+            return np.zeros(int(16000 * seconds), np.float32), 16000
+
+    first = Murmurs(CountingVoice(), tmp_path, "v1", texts=("Hmm.", "Right.", "Long."))
+    first._prepare()
+    assert len(first._clips) == 2                       # длинный «отклик» выброшен
+    picks = []
+    for _ in range(6):
+        first.pick()
+        picks.append(first._last)
+    assert all(a != b for a, b in zip(picks, picks[1:], strict=False))  # подряд не повторяется
+
+    again = Murmurs(CountingVoice(), tmp_path, "v1", texts=("Hmm.", "Right."))
+    again._prepare()
+    assert CountingVoice.calls == 3                     # второй запуск — с диска, без синтеза

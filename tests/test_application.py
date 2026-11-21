@@ -9,9 +9,12 @@ from parley.application.commands import (
     CloseEars,
     CommandHandlers,
     CompanionIsDeaf,
+    Forget,
     NoteMistake,
+    NotFound,
     PartnerArrived,
     PartnerLeft,
+    Remember,
     ReviewPhrase,
     SavePhrase,
     Say,
@@ -21,12 +24,12 @@ from parley.application.commands import (
     UserFinishedTalking,
     UserStartedTalking,
 )
-from parley.application.queries import CompanionStatus, DuePhrases, Listen, Progress, QueryHandlers
+from parley.application.queries import CompanionStatus, DuePhrases, Listen, Progress, QueryHandlers, Recall
 from parley.application.state import LiveState
 from parley.domain.conversation import Utterance
 from parley.domain.learning import MistakeKind, ReviewOutcome
 from parley.infrastructure.journal import InMemoryJournal
-from parley.infrastructure.sqlite import Database, SqliteMistakes, SqlitePhrases, SqliteUtterances
+from parley.infrastructure.sqlite import Database, SqliteFacts, SqliteMistakes, SqlitePhrases, SqliteUtterances
 
 
 class FakeClock:
@@ -41,6 +44,8 @@ class FakeMouth:
     def __init__(self):
         self.said: list[tuple[str, str]] = []
         self.cancelled: set[str] = set()
+        self.murmurs = 0
+        self.hushed = 0
 
     @property
     def busy(self):
@@ -52,12 +57,18 @@ class FakeMouth:
     def cancel(self, speech_ids):
         self.cancelled |= speech_ids
 
+    def murmur(self):
+        self.murmurs += 1
+
+    def hush(self):
+        self.hushed += 1
+
 
 @pytest.fixture
 def app():
     clock, journal, mouth, state = FakeClock(), InMemoryJournal(), FakeMouth(), LiveState()
     db = Database(":memory:")
-    repos = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db)
+    repos = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db), SqliteFacts(db)
     commands, queries = CommandBus(), QueryBus()
     for m, h in CommandHandlers(state, journal, clock, mouth, *repos).routes().items():
         commands.register(m, h)
@@ -172,3 +183,61 @@ def test_emotion_tags_are_not_shown_to_people(app):
     assert mouth.said[0][1].startswith("[excited]")
     from parley.application.queries import SpeechNow
     assert queries.ask(SpeechNow())["text"] == "Great answer! Why Kafka?"
+
+
+def test_pip_remembers_the_user_between_sessions(app):
+    commands, queries, clock, _ = app
+    job = commands.execute(Remember("Backend developer at a bank, 2 years", "work"))
+    commands.execute(Remember("Interview at Yandex on Dec 5", "Interview"))
+    assert commands.execute(Remember("backend developer at a bank, 2 years", "work")) == job  # без дублей
+
+    clock.moment += timedelta(days=1)
+    assert commands.execute(Remember("Moved to a fintech startup", "work", replaces=job)) == job
+    memory = queries.ask(Recall())
+    assert memory["facts"]["work"] == [{"id": job, "text": "Moved to a fintech startup", "updated": "2026-11-22"}]
+    assert memory["facts"]["interview"][0]["text"] == "Interview at Yandex on Dec 5"
+    assert queries.ask(Recall("work"))["total"] == 1
+
+    commands.execute(Forget(job))
+    assert "work" not in queries.ask(Recall())["facts"]
+    with pytest.raises(NotFound):
+        commands.execute(Forget(job))
+
+
+def test_recall_shows_only_recent_session_notes(app):
+    commands, queries, clock, _ = app
+    for day in range(8):
+        clock.moment += timedelta(days=1)
+        commands.execute(Remember(f"Session {day}: talked about tests", "session"))
+    notes = queries.ask(Recall())["facts"]["session"]
+    assert len(notes) == 5 and notes[0]["text"].startswith("Session 7")
+
+
+def test_pip_murmurs_once_while_claude_thinks(app):
+    commands, _, clock, mouth = app
+    commands.execute(UserStartedTalking())
+    commands.execute(UserFinishedTalking(Utterance("I worked on data pipelines", clock.now(), 2.0)))
+    commands.execute(Tick())
+    assert mouth.murmurs == 0                  # сразу — рано: может, Claude ответит быстро
+    clock.moment += timedelta(seconds=2)
+    commands.execute(Tick())
+    commands.execute(Tick())
+    assert mouth.murmurs == 1                  # один раз за фразу, не «хм-хм-хм»
+
+    hushed = mouth.hushed
+    commands.execute(UserStartedTalking())     # заговорил снова — отклик обрывается
+    assert mouth.hushed == hushed + 1
+    commands.execute(UserFinishedTalking(Utterance("and Airflow", clock.now(), 1.0)))
+    clock.moment += timedelta(seconds=2)
+    commands.execute(Tick())
+    assert mouth.murmurs == 2                  # новая фраза — можно отозваться снова
+
+
+def test_no_murmur_when_reply_is_already_coming(app):
+    commands, _, clock, mouth = app
+    commands.execute(UserStartedTalking())
+    commands.execute(UserFinishedTalking(Utterance("Hello", clock.now(), 1.0)))
+    commands.execute(Say("Hi! How was your day?"))  # Claude ответил быстро
+    clock.moment += timedelta(seconds=2)
+    commands.execute(Tick())
+    assert mouth.murmurs == 0

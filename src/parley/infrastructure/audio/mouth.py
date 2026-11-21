@@ -3,6 +3,9 @@
 Реплика режется на предложения, а предложения — на куски одного языка (у каждого языка свой голос).
 Первый кусок начинает звучать, пока синтезируется второй. Так ответ слышно быстрее,
 а при перебивании точнее известно, что человек успел услышать.
+
+Кроме реплик рот умеет короткие отклики «Hmm» (murmurs.py): они идут через ту же очередь,
+но не докладываются как реплики — для Claude их нет.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 
 from ...application.ports import SpeechListener
+from .murmurs import Murmurs
 from .pcm import envelope, normalized
 from .pipewire import Playback, Volume
 from .voices import Voice, language_runs
@@ -23,6 +27,7 @@ from .voices import Voice, language_runs
 log = logging.getLogger(__name__)
 
 TICK_S = 0.05
+_MURMUR = "~murmur"  # метка отклика в очереди вместо id реплики
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+")
 
 
@@ -40,12 +45,15 @@ def pieces(text: str) -> list[tuple[str, str]]:
 
 class QueuedMouth:
     def __init__(self, voice: Voice, listener: SpeechListener, output: str = "",
-                 on_level: Callable[[float], None] = lambda _: None, volume: Volume | None = None):
+                 on_level: Callable[[float], None] = lambda _: None, volume: Volume | None = None,
+                 murmurs: Murmurs | None = None):
         self.voice = voice
         self.volume = volume or Volume()
         self.listener = listener
         self.output = output
         self.on_level = on_level
+        self.murmurs = murmurs
+        self._hushes = 0  # каждый hush() делает все поставленные раньше отклики устаревшими
         self._queue: queue.Queue[tuple[str, str]] = queue.Queue()
         self._cancelled: set[str] = set()
         self._speaking_id: str | None = None
@@ -59,6 +67,15 @@ class QueuedMouth:
 
     def say(self, speech_id: str, text: str) -> None:
         self._queue.put((speech_id, text))
+
+    def murmur(self) -> None:
+        if self.murmurs:
+            self._queue.put((_MURMUR, str(self._hushes)))
+
+    def hush(self) -> None:
+        self._hushes += 1
+        if self._speaking_id == _MURMUR and self._current:
+            self._current.stop()
 
     def cancel(self, speech_ids: set[str]) -> None:
         """Не ждёт поток рта: вызывается под блокировкой команд."""
@@ -76,6 +93,10 @@ class QueuedMouth:
             speech_id, text = self._queue.get()
             if speech_id in self._cancelled:
                 continue
+            if speech_id == _MURMUR:
+                if text == str(self._hushes):
+                    self._murmur()
+                continue
             self._speaking_id = speech_id
             try:
                 self._speak(speech_id, text)
@@ -86,6 +107,27 @@ class QueuedMouth:
                 self._speaking_id = None
                 self._current = None
                 self.on_level(0.0)
+
+    def _murmur(self) -> None:
+        clip = self.murmurs.pick() if self.murmurs else None
+        if clip is None:
+            return
+        self._speaking_id = _MURMUR  # busy: уши знают, что это наш собственный голос (эхо)
+        try:
+            samples = normalized(clip[0])
+            levels = envelope(samples, clip[1], TICK_S)
+            playback = Playback(samples, clip[1], self.output, self.volume)
+            self._current = playback
+            while playback.playing:  # громкость нужна защите от эха, иначе свой «Hmm» сочтётся перебиванием
+                self.on_level(levels[min(int(playback.elapsed / TICK_S), len(levels) - 1)] if levels else 0.0)
+                time.sleep(TICK_S)
+            playback.wait()
+        except Exception:
+            log.exception("Отклик не прозвучал")
+        finally:
+            self._speaking_id = None
+            self._current = None
+            self.on_level(0.0)
 
     def _speak(self, speech_id: str, text: str) -> None:
         parts = pieces(text)

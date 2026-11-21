@@ -20,13 +20,14 @@ from .config import Settings
 from .infrastructure.audio.ears import MicrophoneEars
 from .infrastructure.audio.models import LocalModels
 from .infrastructure.audio.mouth import QueuedMouth
+from .infrastructure.audio.murmurs import Murmurs
 from .infrastructure.audio.pipewire import Volume
 from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, VoiceChain
 from .infrastructure.clock import SystemClock
 from .infrastructure.diary import Diary
 from .infrastructure.journal import InMemoryJournal
 from .infrastructure.openrouter import OpenRouter
-from .infrastructure.sqlite import Database, SqliteMistakes, SqlitePhrases, SqliteUtterances
+from .infrastructure.sqlite import Database, SqliteFacts, SqliteMistakes, SqlitePhrases, SqliteUtterances
 from .interfaces.mcp.runner import BackgroundServer
 from .interfaces.mcp.server import ClaudePresence, build_server
 
@@ -130,6 +131,7 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
     state = LiveState()
     db = Database(settings.database)
     phrases, mistakes, utterances = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db)
+    facts = SqliteFacts(db)
     models = LocalModels(settings.models_dir)
     openrouter = OpenRouter(settings.openrouter, diary)
     levels = Levels()
@@ -143,15 +145,21 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
                                    CloudVoice(openrouter, v.russian, "cloud-ru")))
     voice = VoiceChain(*voices)
     volume = Volume(v.volume)
-    mouth = QueuedMouth(voice, SpeechReporter(commands), v.output, on_level=levels.set_voice, volume=volume)
+    # «Hmm» — тем же английским голосом, что и реплики: лучшим из доступных
+    murmurs = Murmurs(voices[0].english, settings.murmurs_dir, voice_key=f"{voices[0].english.name}|{v.english}")
+    mouth = QueuedMouth(voice, SpeechReporter(commands), v.output, on_level=levels.set_voice, volume=volume,
+                        murmurs=murmurs)
 
-    timing = Timing(reply_pause_s=settings.conversation.reply_pause_s)
-    handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, timing)
+    timing = Timing(reply_pause_s=settings.conversation.reply_pause_s,
+                    murmur_after_s=settings.conversation.murmur_after_s)
+    handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, facts, timing)
     for message, handler in handlers.routes().items():
         commands.register(message, handler)
-    for message, handler in QueryHandlers(state, journal, clock, phrases, mistakes, utterances).routes().items():
+    for message, handler in QueryHandlers(state, journal, clock, phrases, mistakes, utterances, facts).routes().items():
         queries.register(message, handler)
 
+    if settings.conversation.murmur_after_s > 0:
+        murmurs.prepare_in_background()
     closers: list[Callable[[], None]] = [mouth.close]
     if with_microphone:
         handlers.ears = MicrophoneEars(settings.hearing, models, openrouter, HearingReporter(commands),

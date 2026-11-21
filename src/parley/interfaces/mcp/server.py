@@ -31,10 +31,12 @@ from ...application.commands import (
     CloseEars,
     CompanionIsDeaf,
     Emote,
+    Forget,
     HideBoard,
     NoteMistake,
     NotFound,
     OpenEars,
+    Remember,
     ReviewPhrase,
     SavePhrase,
     Say,
@@ -43,7 +45,7 @@ from ...application.commands import (
     ToggleEars,
 )
 from ...application.ports import Journal, Recorder
-from ...application.queries import FOR_CLAUDE, CompanionStatus, DuePhrases, Listen, Progress, SpeechResult
+from ...application.queries import FOR_CLAUDE, CompanionStatus, DuePhrases, Listen, Progress, Recall, SpeechResult
 from ...domain.companion import Mood
 from ...domain.learning import MistakeKind, ReviewOutcome
 
@@ -145,6 +147,28 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     def hide_board() -> str:
         """Close the board; Pip returns to the center."""
         execute(HideBoard())
+        return "ok"
+
+    # --- память о пользователе ---
+
+    @mcp.tool()
+    def recall(topic: str = "") -> dict:
+        """What you remember about the user from earlier sessions, grouped by topic (profile, work, projects,
+        interview, life, style, session), newest first. Call it quietly when a session starts."""
+        return ask(Recall(topic))
+
+    @mcp.tool()
+    def remember(fact: str, topic: str = "profile", replaces: str = "") -> dict:
+        """Save one short fact about the user for future sessions (<300 chars, write it in English or Russian).
+        topic: profile | work | projects | interview | life | style | session. If it updates an old fact
+        (new job, changed date), pass the old fact's id as `replaces` instead of adding a contradiction.
+        Save quietly — never announce that you are remembering something."""
+        return {"id": execute(Remember(fact, topic, replaces))}
+
+    @mcp.tool()
+    def forget(fact_id: str) -> str:
+        """Delete a wrong or outdated fact (e.g. the user corrected you or asked you to forget it)."""
+        execute(Forget(fact_id))
         return "ok"
 
     # --- обратная связь разработчику ---

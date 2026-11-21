@@ -93,6 +93,10 @@ class Bilingual:
         self.voices = {"en": english, "ru": russian}
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix=f"{name}-voice")
 
+    @property
+    def english(self) -> Voice:
+        return self.voices["en"]
+
     def synthesize(self, text: str) -> tuple[np.ndarray, int]:
         runs = language_runs(text) or [Run("en", text, text)]
         if len(runs) == 1:

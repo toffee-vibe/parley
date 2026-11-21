@@ -1,4 +1,4 @@
-"""Хранилище на SQLite: фразы, ошибки и история фраз пользователя (для метрик прогресса).
+"""Хранилище на SQLite: фразы, ошибки, память о пользователе и история его фраз (для метрик прогресса).
 
 Одно соединение на всё приложение под блокировкой: записей мало, а потоков несколько.
 Схема создаётся сама; новые колонки добавлять через ALTER в `_migrate`.
@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..domain.conversation import Utterance
 from ..domain.learning import Mistake, MistakeKind, Phrase, mistake_key
+from ..domain.memory import Fact
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS phrases (
@@ -47,6 +48,14 @@ CREATE TABLE IF NOT EXISTS utterances (
     text TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS utterances_time ON utterances (started_at);
+
+CREATE TABLE IF NOT EXISTS facts (
+    id TEXT PRIMARY KEY,
+    topic TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -67,6 +76,11 @@ def _t(moment: datetime | None) -> str | None:
 
 def _dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def _at(value: str) -> datetime:
+    """Обязательная дата (колонка NOT NULL)."""
+    return datetime.fromisoformat(value)
 
 
 class SqlitePhrases:
@@ -106,7 +120,7 @@ class SqlitePhrases:
     @staticmethod
     def _phrase(row: sqlite3.Row) -> Phrase:
         return Phrase(id=row["id"], text=row["text"], meaning=row["meaning"], example=row["example"],
-                      created_at=_dt(row["created_at"]), stage=row["stage"], due_at=_dt(row["due_at"]),
+                      created_at=_at(row["created_at"]), stage=row["stage"], due_at=_dt(row["due_at"]),
                       used=row["used"], struggled=row["struggled"], missed=row["missed"])
 
 
@@ -137,8 +151,43 @@ class SqliteMistakes:
     @staticmethod
     def _mistake(row: sqlite3.Row) -> Mistake:
         return Mistake(id=row["id"], category=MistakeKind(row["category"]), wrong=row["wrong"], right=row["right"],
-                       explanation=row["explanation"], count=row["count"], first_seen=_dt(row["first_seen"]),
+                       explanation=row["explanation"], count=row["count"], first_seen=_at(row["first_seen"]),
                        last_seen=_dt(row["last_seen"]))
+
+
+class SqliteFacts:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def save(self, fact: Fact) -> None:
+        with self.db.lock, self.db.conn:
+            self.db.conn.execute("INSERT OR REPLACE INTO facts VALUES (?,?,?,?,?)",
+                                 (fact.id, fact.topic, fact.text, _t(fact.created_at), _t(fact.updated_at)))
+
+    def get(self, fact_id: str) -> Fact | None:
+        return self._one("SELECT * FROM facts WHERE id = ?", fact_id)
+
+    def find_by_text(self, text: str) -> Fact | None:
+        return self._one("SELECT * FROM facts WHERE lower(text) = lower(?)", " ".join(text.split()))
+
+    def delete(self, fact_id: str) -> None:
+        with self.db.lock, self.db.conn:
+            self.db.conn.execute("DELETE FROM facts WHERE id = ?", (fact_id,))
+
+    def all(self) -> list[Fact]:
+        with self.db.lock:
+            rows = self.db.conn.execute("SELECT * FROM facts").fetchall()
+        return [self._fact(r) for r in rows]
+
+    def _one(self, sql: str, *args: object) -> Fact | None:
+        with self.db.lock:
+            row = self.db.conn.execute(sql, args).fetchone()
+        return self._fact(row) if row else None
+
+    @staticmethod
+    def _fact(row: sqlite3.Row) -> Fact:
+        return Fact(id=row["id"], topic=row["topic"], text=row["text"], created_at=_at(row["created_at"]),
+                    updated_at=_dt(row["updated_at"]))
 
 
 class SqliteUtterances:
@@ -153,5 +202,5 @@ class SqliteUtterances:
     def since(self, moment: datetime) -> list[Utterance]:
         with self.db.lock:
             rows = self.db.conn.execute("SELECT * FROM utterances ORDER BY started_at").fetchall()
-        items = [Utterance(r["text"], _dt(r["started_at"]), r["duration_s"]) for r in rows]
+        items = [Utterance(r["text"], _at(r["started_at"]), r["duration_s"]) for r in rows]
         return [u for u in items if u.started_at >= moment]

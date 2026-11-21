@@ -10,14 +10,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from ..domain.companion import Activity, Mood
 from ..domain.conversation import SoundNoticed, Utterance, heard
 from ..domain.learning import Mistake, MistakeKind, Phrase, ReviewOutcome, mistake_key
+from ..domain.memory import Fact
 from ..domain.shared import Aggregate
 from ..domain.speech import Speech
-from .ports import Clock, Ears, Journal, MistakeRepository, Mouth, PhraseRepository, UtteranceLog
+from .ports import Clock, Ears, FactRepository, Journal, MistakeRepository, Mouth, PhraseRepository, UtteranceLog
 from .state import LiveState
 
 
@@ -35,6 +36,7 @@ class Timing:
 
     reply_pause_s: float = 1.2      # сколько тишины после фразы человека, прежде чем говорить
     thinking_patience_s: float = 25  # через сколько перестать «думать», если ответа нет
+    murmur_after_s: float = 1.6      # через сколько тишины отозваться «Hmm», пока Claude думает; 0 — никогда
 
 
 # --- слух ---
@@ -165,10 +167,25 @@ class NoteMistake:
     explanation: str
 
 
+# --- память о пользователе ---
+
+
+@dataclass(frozen=True)
+class Remember:
+    text: str
+    topic: str = "profile"
+    replaces: str = ""  # id устаревшего факта: заменить его, а не добавить противоречие
+
+
+@dataclass(frozen=True)
+class Forget:
+    fact_id: str
+
+
 class CommandHandlers:
     def __init__(self, state: LiveState, journal: Journal, clock: Clock, mouth: Mouth,
                  phrases: PhraseRepository, mistakes: MistakeRepository, utterances: UtteranceLog,
-                 timing: Timing = Timing()):
+                 facts: FactRepository, timing: Timing = Timing()):
         self.state = state
         self.journal = journal
         self.clock = clock
@@ -176,6 +193,7 @@ class CommandHandlers:
         self.phrases = phrases
         self.mistakes = mistakes
         self.utterances = utterances
+        self.facts = facts
         self.timing = timing
         self.ears: Ears | None = None  # подставляется в bootstrap: уши и команды ссылаются друг на друга
 
@@ -202,6 +220,8 @@ class CommandHandlers:
             SavePhrase: self._save_phrase,
             ReviewPhrase: self._review_phrase,
             NoteMistake: self._note_mistake,
+            Remember: self._remember,
+            Forget: self._forget,
         }
 
     @property
@@ -254,6 +274,7 @@ class CommandHandlers:
         """Человек заговорил — всё, чему не разрешено его перебивать, замолкает или отменяется."""
         now = self.clock.now()
         self.companion.user_started_talking(now)
+        self.mouth.hush()
         stopped = [s for s in self.state.unfinished_speeches() + self.state.waiting if s.user_started_talking(now)]
         self._after_stop(stopped)
         self._publish(self.companion)
@@ -281,7 +302,17 @@ class CommandHandlers:
             for speech in self.state.waiting:
                 self.mouth.say(speech.id, speech.text)
             self.state.waiting.clear()
+        self._maybe_murmur(now)
         self._publish(self.companion)
+
+    def _maybe_murmur(self, now: datetime) -> None:
+        """Claude думает дольше обычной паузы — Пип отзывается, чтобы не висела мёртвая тишина."""
+        if self.timing.murmur_after_s <= 0 or self.state.waiting or self.state.unfinished_speeches() \
+                or self.mouth.busy:
+            return
+        if self.companion.wants_to_murmur(now, timedelta(seconds=self.timing.murmur_after_s)):
+            self.companion.murmur()
+            self.mouth.murmur()
 
     # --- речь ---
 
@@ -392,3 +423,23 @@ class CommandHandlers:
         self.mistakes.save(mistake)
         self._publish(mistake)
         return mistake.id
+
+    # --- память о пользователе ---
+
+    def _remember(self, command: Remember) -> str:
+        now = self.clock.now()
+        fact = (self.facts.get(command.replaces) if command.replaces else None) \
+            or self.facts.find_by_text(command.text)
+        if command.replaces and fact is None:
+            raise NotFound(f"Нет факта {command.replaces}")
+        if fact:
+            fact.rewrite(command.text, command.topic, now)
+        else:
+            fact = Fact(command.text, command.topic, now)
+        self.facts.save(fact)
+        return fact.id
+
+    def _forget(self, command: Forget) -> None:
+        if self.facts.get(command.fact_id) is None:
+            raise NotFound(f"Нет факта {command.fact_id}")
+        self.facts.delete(command.fact_id)

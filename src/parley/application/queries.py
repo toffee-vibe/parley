@@ -8,7 +8,7 @@ from datetime import timedelta
 from statistics import mean
 
 from ..domain.learning import Phrase
-from .ports import Clock, Journal, MistakeRepository, PhraseRepository, UtteranceLog
+from .ports import Clock, FactRepository, Journal, MistakeRepository, PhraseRepository, UtteranceLog
 from .state import LiveState
 
 # То, что важно Claude. Остальное (смена выражения лица, начало реплики) нужно только интерфейсу.
@@ -50,6 +50,16 @@ class Progress:
     days: int = 1
 
 
+@dataclass(frozen=True)
+class Recall:
+    """Память о пользователе: факты по темам, свежие сверху. topic="" — все."""
+
+    topic: str = ""
+
+
+SESSION_NOTES_SHOWN = 5  # итогов прошлых сессий достаточно последних нескольких
+
+
 def phrase_view(phrase: Phrase) -> dict:
     return {"id": phrase.id, "text": phrase.text, "meaning": phrase.meaning, "example": phrase.example,
             "stage": phrase.stage, "learned": phrase.learned, "used": phrase.used, "missed": phrase.missed}
@@ -57,13 +67,15 @@ def phrase_view(phrase: Phrase) -> dict:
 
 class QueryHandlers:
     def __init__(self, state: LiveState, journal: Journal, clock: Clock,
-                 phrases: PhraseRepository, mistakes: MistakeRepository, utterances: UtteranceLog):
+                 phrases: PhraseRepository, mistakes: MistakeRepository, utterances: UtteranceLog,
+                 facts: FactRepository):
         self.state = state
         self.journal = journal
         self.clock = clock
         self.phrases = phrases
         self.mistakes = mistakes
         self.utterances = utterances
+        self.facts = facts
 
     def routes(self) -> dict[type, object]:
         return {
@@ -73,6 +85,7 @@ class QueryHandlers:
             SpeechNow: self._speech_now,
             DuePhrases: self._due_phrases,
             Progress: self._progress,
+            Recall: self._recall,
         }
 
     def _listen(self, query: Listen) -> dict:
@@ -134,3 +147,17 @@ class QueryHandlers:
                 for m in self.mistakes.most_frequent(5, since=since)
             ],
         }
+
+    def _recall(self, query: Recall) -> dict:
+        topic = query.topic.strip().lower()
+        facts = sorted(self.facts.all(), key=lambda f: f.updated_at or f.created_at, reverse=True)
+        grouped: dict[str, list[dict]] = {}
+        for fact in facts:
+            if topic and fact.topic != topic:
+                continue
+            notes = grouped.setdefault(fact.topic, [])
+            if fact.topic == "session" and len(notes) >= SESSION_NOTES_SHOWN:
+                continue
+            notes.append({"id": fact.id, "text": fact.text,
+                          "updated": (fact.updated_at or fact.created_at).date().isoformat()})
+        return {"facts": grouped, "total": sum(len(v) for v in grouped.values())}
