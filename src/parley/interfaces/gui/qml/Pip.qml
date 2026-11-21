@@ -29,6 +29,12 @@ Item {
     property real lookX: 0
     property real lookY: 0
     property bool pointing: false
+    // Внешность корпуса (по умолчанию — из темы)
+    property color shellLight: Theme.shellLight
+    property color shellColor: Theme.shell
+    property color shellShade: Theme.shellShade
+    property color visorColor: Theme.visor
+    property color visorEdge: Theme.visorEdge
 
     readonly property real s: Math.min(width, height)
     readonly property bool deaf: activity === "deaf"
@@ -145,8 +151,8 @@ Item {
             anchors.fill: parent
             radius: height / 2
             gradient: Gradient {
-                GradientStop { position: 0; color: Theme.shellLight }
-                GradientStop { position: 1; color: Theme.shellShade }
+                GradientStop { position: 0; color: pip.shellLight }
+                GradientStop { position: 1; color: pip.shellShade }
             }
         }
         Rectangle { // огонёк на груди
@@ -189,7 +195,7 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 width: pip.s * 0.014; height: parent.height * 0.72; radius: width / 2
-                color: Theme.shellShade
+                color: pip.shellShade
             }
             Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -216,8 +222,8 @@ Item {
                     anchors.fill: parent
                     radius: width / 2
                     gradient: Gradient {
-                        GradientStop { position: 0; color: Theme.shell }
-                        GradientStop { position: 1; color: Theme.shellShade }
+                        GradientStop { position: 0; color: pip.shellColor }
+                        GradientStop { position: 1; color: pip.shellShade }
                     }
                 }
                 Rectangle {
@@ -237,9 +243,9 @@ Item {
             anchors.fill: parent
             radius: height * 0.4
             gradient: Gradient {
-                GradientStop { position: 0; color: Theme.shellLight }
-                GradientStop { position: 0.55; color: Theme.shell }
-                GradientStop { position: 1; color: Theme.shellShade }
+                GradientStop { position: 0; color: pip.shellLight }
+                GradientStop { position: 0.55; color: pip.shellColor }
+                GradientStop { position: 1; color: pip.shellShade }
             }
         }
         Rectangle { // блик сверху
@@ -257,10 +263,10 @@ Item {
             y: parent.height * 0.11
             radius: height * 0.42
             border.width: Math.max(1, pip.s * 0.006)
-            border.color: Theme.visorEdge
+            border.color: pip.visorEdge
             gradient: Gradient {
                 GradientStop { position: 0; color: "#1d1f26" }
-                GradientStop { position: 1; color: Theme.visor }
+                GradientStop { position: 1; color: pip.visorColor }
             }
             clip: true
 
