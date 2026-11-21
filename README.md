@@ -31,7 +31,7 @@ Claude слышит твой микрофон и отвечает вслух: в
 [uv](https://docs.astral.sh/uv/getting-started/installation/) — нужный Python он скачает сам.
 
 ```bash
-git clone <адрес репозитория> parley && cd parley
+git clone https://github.com/toffee-vibe/parley && cd parley
 uv run parley                    # окно + MCP-сервер в фоне
 uv run parley agents              # проверить, к каким агентам подключён Parley
 ```
