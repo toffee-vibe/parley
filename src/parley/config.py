@@ -123,6 +123,11 @@ class Settings:
     def database(self) -> Path:
         return DATA_DIR / "parley.db"
 
+    @property
+    def diary_dir(self) -> Path:
+        """Технический дневник: как работало приложение (infrastructure/diary.py, `parley report`)."""
+        return DATA_DIR / "diary"
+
 
 def load() -> Settings:
     if not CONFIG_FILE.exists():

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -22,6 +23,7 @@ from .infrastructure.audio.mouth import QueuedMouth
 from .infrastructure.audio.pipewire import Volume
 from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, VoiceChain
 from .infrastructure.clock import SystemClock
+from .infrastructure.diary import Diary
 from .infrastructure.journal import InMemoryJournal
 from .infrastructure.openrouter import OpenRouter
 from .infrastructure.sqlite import Database, SqliteMistakes, SqlitePhrases, SqliteUtterances
@@ -79,10 +81,12 @@ class Parley:
     volume: Volume
     server: BackgroundServer
     closers: list[Callable[[], None]]  # что остановить при выходе: микрофон, звук
+    diary: Diary
 
     def __post_init__(self) -> None:
         self._partner_online = False
         self._pulse = Pulse(self._beat)
+        self._started = time.monotonic()
 
     def _beat(self) -> None:
         online = self.presence.online
@@ -96,12 +100,18 @@ class Parley:
         return bool(self.settings.openrouter.api_key)
 
     def start(self) -> None:
+        self._started = time.monotonic()
+        o, v = self.settings.openrouter, self.settings.voice
+        self.diary.record("session_start", stt=o.transcription_model, stt_fallback=o.fallback_transcription_model,
+                          tts=o.voice_model if self.cloud_ready else "", voices=[v.english, v.russian],
+                          volume=self.volume.value)
         self.server.start()
         self.commands.execute(OpenEars())
         self._pulse.start()
         log.info("Parley слушает. MCP: %s/mcp", self.settings.server.url)
 
     def stop(self) -> None:
+        self.diary.record("session_end", minutes=round((time.monotonic() - self._started) / 60, 1))
         self._pulse.stop()
         for close in self.closers:
             try:
@@ -113,12 +123,15 @@ class Parley:
 
 def build(settings: Settings, with_microphone: bool = True) -> Parley:
     clock = SystemClock()
+    diary = Diary(settings.diary_dir)
+    diary.capture_warnings()
     journal = InMemoryJournal()
+    journal.subscribe(diary.conversation_event)
     state = LiveState()
     db = Database(settings.database)
     phrases, mistakes, utterances = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db)
     models = LocalModels(settings.models_dir)
-    openrouter = OpenRouter(settings.openrouter)
+    openrouter = OpenRouter(settings.openrouter, diary)
     levels = Levels()
 
     commands, queries = CommandBus(), QueryBus()
@@ -143,10 +156,10 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
     if with_microphone:
         handlers.ears = MicrophoneEars(settings.hearing, models, openrouter, HearingReporter(commands),
                                        companion_speaking=lambda: mouth.busy, voice_level=lambda: levels.voice,
-                                       on_level=levels.set_hearing)
+                                       on_level=levels.set_hearing, diary=diary)
         closers.append(handlers.ears.close)
 
     presence = ClaudePresence()
-    mcp = build_server(commands, queries, journal, settings.server.url, presence)
+    mcp = build_server(commands, queries, journal, settings.server.url, presence, diary)
     server = BackgroundServer(mcp, settings.server.host, settings.server.port)
-    return Parley(settings, commands, queries, journal, presence, levels, voice, volume, server, closers)
+    return Parley(settings, commands, queries, journal, presence, levels, voice, volume, server, closers, diary)

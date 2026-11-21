@@ -4,6 +4,7 @@
     parley headless        без окна (сервер, микрофон, голос)
     parley ears toggle     выключить/включить слух (для хоткея); также open / close
     parley status          состояние персонажа
+    parley report [-d N]   как работало приложение за N дней: распознавание, цена, задержки, сбои, заметки Claude
     parley connect-claude  зарегистрировать MCP-сервер в Claude Code (user scope)
 """
 
@@ -30,6 +31,8 @@ def main() -> None:
     ears = sub.add_parser("ears", help="слух персонажа")
     ears.add_argument("action", choices=["toggle", "open", "close"])
     sub.add_parser("status", help="состояние персонажа")
+    report = sub.add_parser("report", help="сводка технического дневника")
+    report.add_argument("-d", "--days", type=int, default=1, help="за сколько дней (по умолчанию — сегодня)")
     sub.add_parser("connect-claude", help="подключить к Claude Code")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -52,6 +55,9 @@ def main() -> None:
             print(_request(settings, f"/ears/{args.action}", method="POST"))
         case "status":
             print(_request(settings, "/status"))
+        case "report":
+            from .infrastructure.diary import summarize
+            print(summarize(settings.diary_dir, args.days))
         case "connect-claude":
             _connect_claude(settings)
 

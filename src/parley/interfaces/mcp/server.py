@@ -42,7 +42,7 @@ from ...application.commands import (
     StopSpeaking,
     ToggleEars,
 )
-from ...application.ports import Journal
+from ...application.ports import Journal, Recorder
 from ...application.queries import FOR_CLAUDE, CompanionStatus, DuePhrases, Listen, Progress, SpeechResult
 from ...domain.companion import Mood
 from ...domain.learning import MistakeKind, ReviewOutcome
@@ -75,7 +75,7 @@ class ClaudePresence:
 
 
 def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url: str,
-                 presence: ClaudePresence) -> MCPServer:
+                 presence: ClaudePresence, diary: Recorder) -> MCPServer:
     instructions = INSTRUCTIONS.read_text(encoding="utf-8").replace("{url}", url)
     mcp = MCPServer("parley", title="Parley — voice companion", instructions=instructions)
 
@@ -146,6 +146,18 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         """Close the board; Pip returns to the center."""
         execute(HideBoard())
         return "ok"
+
+    # --- обратная связь разработчику ---
+
+    @mcp.tool()
+    def note_for_developer(problem: str, context: str = "") -> str:
+        """Silently note a problem with Parley itself (not with the user's English) for the developer: misheard
+        speech you had to guess, Pip cut the user off or talked over them, long delays, a reply that got dropped,
+        an awkward voice/language switch, a missing tool you wished you had. One short sentence each;
+        `context` = what happened (e.g. heard text). Never mention this to the user."""
+        presence.touched()
+        diary.record("claude_note", problem=problem, context=context)
+        return "noted"
 
     # --- обучение ---
 

@@ -75,11 +75,31 @@ bind = SUPER, M, exec, curl -sX POST http://127.0.0.1:8790/ears/toggle
 **Эхо.** В колонках микрофон слышит самого Пипа. Parley сам измеряет громкость эха в начале каждой реплики
 и засчитывает перебивание, только когда ты заметно громче (`hearing.echo_margin`). В наушниках эха нет.
 
+## Технический дневник: что улучшать
+
+Parley записывает, как он работал, в `~/.local/share/parley/diary/ГГГГ-ММ-ДД.jsonl`
+(одна JSON-строка на запись, хранится 60 дней, никуда не отправляется):
+
+- каждый запрос распознавания: модель, длина звука, задержка, цена, ошибка;
+- каждый запрос облачного голоса;
+- выброшенные «выдуманные» фразы, сорвавшаяся речь, перебивания (с громкостью эха);
+- события разговора, все предупреждения из логов;
+- заметки Claude: инструмент `note_for_developer`, Claude молча отмечает, что мешало (не расслышал, Пип перебил, долго ждал ответа…).
+
+Сводка:
+
+```bash
+uv run parley report          # сегодня
+uv run parley report -d 7     # за неделю: сколько стоило, задержки, сбои, заметки Claude
+```
+
+Учебная статистика (фразы, ошибки, твоя речь) — отдельно, в `parley.db`.
+
 ## Как Claude подключается
 
 | Канал | Для чего |
 |---|---|
-| `http://127.0.0.1:8790/mcp` | MCP: `say`, `listen`, `emote`, `show_board`, `hide_board`, `save_phrase`, `due_phrases`, `review_phrase`, `note_mistake`, `progress`, `status`, `set_ears`, `stop_speaking` |
+| `http://127.0.0.1:8790/mcp` | MCP: `say`, `listen`, `emote`, `show_board`, `hide_board`, `save_phrase`, `due_phrases`, `review_phrase`, `note_mistake`, `progress`, `status`, `set_ears`, `stop_speaking`, `note_for_developer` |
 | `/events` | SSE-поток событий: `heard`, `sound`, `interrupted`, `speech_dropped`, `speech_finished`, `ears_closed`… |
 | `/events.ndjson` | то же, по одной JSON-строке; Claude Code подписывается через Monitor и `curl -sN` |
 | `listen` (MCP) | long-poll, если подписаться на поток нельзя |
@@ -99,6 +119,7 @@ bind = SUPER, M, exec, curl -sX POST http://127.0.0.1:8790/ears/toggle
 | Интервалы повторения, правила фраз и ошибок | `src/parley/domain/learning.py` |
 | Модели, голос, пороги, устройства | `~/.config/parley/config.toml` |
 | Распознавание или голос на другой сервис | `src/parley/infrastructure/` + одна строка в `src/parley/bootstrap.py` |
+| Что пишется в технический дневник и сводку `parley report` | `src/parley/infrastructure/diary.py` |
 | Новый инструмент для Claude | команда/запрос в `application/`, обёртка в `interfaces/mcp/server.py` |
 
 ## Архитектура

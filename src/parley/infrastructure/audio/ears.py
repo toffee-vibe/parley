@@ -23,9 +23,10 @@ from typing import Protocol
 import numpy as np
 import sherpa_onnx
 
-from ...application.ports import HearingListener
+from ...application.ports import HearingListener, Recorder
 from ...config import HearingSettings
 from ...domain.conversation import Utterance
+from ..diary import NullDiary
 from .models import LocalModels
 from .pcm import SAMPLE_RATE, rms
 from .pipewire import CHUNK, Microphone
@@ -64,8 +65,9 @@ class MicrophoneEars:
     def __init__(self, settings: HearingSettings, models: LocalModels, transcriber: Transcriber,
                  listener: HearingListener, companion_speaking: Callable[[], bool],
                  voice_level: Callable[[], float] = lambda: 0.0,
-                 on_level: Callable[[float], None] = lambda _: None):
+                 on_level: Callable[[float], None] = lambda _: None, diary: Recorder | None = None):
         self.settings = settings
+        self.diary = diary or NullDiary()
         self.transcriber = transcriber
         self.listener = listener
         self.companion_speaking = companion_speaking
@@ -114,6 +116,7 @@ class MicrophoneEars:
             if self._voice_reported and self._voice_since and now - self._voice_since > LOST_VOICE_S \
                     and not self._vad.has_pending():
                 self._voice_reported = False
+                self.diary.record("voice_lost")
                 self.listener.voice_finished(None)
             return
         self._voice_since = now
@@ -123,6 +126,8 @@ class MicrophoneEars:
             self._loud_s = self._loud_s + CHUNK / SAMPLE_RATE if self._echo.louder_than_echo(level) else 0.0
             if self._loud_s < BARGE_IN_S:
                 return  # скорее всего, это эхо собственного голоса
+            self.diary.record("barge_in", mic=round(level, 4), voice=round(self._echo.voice_level(), 4),
+                              echo_ratio=round(self._echo.ratio, 3))
         self._voice_reported = True
         self.listener.voice_started()
 
@@ -142,6 +147,7 @@ class MicrophoneEars:
             self.listener.voice_finished(None)
             return
         if _imagined(text, duration):
+            self.diary.record("stt_discarded", text=text, audio_s=round(duration, 2))
             text = ""
         self.listener.voice_finished(Utterance(text, started, duration) if text else None)
 

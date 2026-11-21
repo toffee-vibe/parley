@@ -44,6 +44,13 @@ class Journal(Protocol):
     def subscribe(self, callback: Callable[[JournalEntry], None]) -> None: ...
 
 
+# --- технический дневник: как работает само приложение (infrastructure/diary.py) ---
+
+
+class Recorder(Protocol):
+    def record(self, kind: str, **data: Any) -> None: ...
+
+
 # --- хранилища ---
 
 
