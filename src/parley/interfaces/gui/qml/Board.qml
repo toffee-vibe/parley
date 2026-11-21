@@ -20,7 +20,7 @@ Item {
         offset.y: 16
         blur: 48
         radius: panel.radius
-        color: "#a0000000"
+        color: Theme.shadow
     }
 
     Rectangle {
@@ -83,8 +83,8 @@ Item {
                 textFormat: TextEdit.MarkdownText
                 text: root.markdown
                 wrapMode: TextEdit.Wrap
-                color: "#c9cad1"
-                selectionColor: "#3a3d48"
+                color: Theme.boardText
+                selectionColor: Theme.selection
                 font.family: Theme.font
                 font.pixelSize: Theme.boardTextSize
                 font.weight: Font.Medium

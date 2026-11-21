@@ -30,9 +30,9 @@ Rectangle {
             id: micButton
             width: 44; height: 44; radius: 22
             anchors.verticalCenter: parent.verticalCenter
-            color: dock.deaf ? (micMouse.containsMouse ? "#4a2326" : "#3a1d20")
+            color: dock.deaf ? (micMouse.containsMouse ? Theme.dangerHover : Theme.danger)
                              : (micMouse.containsMouse ? Theme.surfaceHover : Theme.surfaceRaised)
-            border.color: dock.deaf ? "#6b2c30" : "transparent"
+            border.color: dock.deaf ? Theme.dangerBorder : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.fast } }
 
             Icon {

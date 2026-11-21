@@ -18,6 +18,12 @@ QtObject {
     readonly property color text: "#f4f3ef"
     readonly property color textMuted: "#9a9ca6"
     readonly property color textFaint: "#5c5f69"
+    readonly property color boardText: "#c9cad1"      // обычный текст на доске
+    readonly property color selection: "#3a3d48"
+    readonly property color shadow: "#a0000000"
+    readonly property color danger: "#3a1d20"         // кнопка выключенного микрофона
+    readonly property color dangerHover: "#4a2326"
+    readonly property color dangerBorder: "#6b2c30"
 
     // --- состояния: этим цветом светятся глаза, антенна и индикаторы ---
     readonly property color waiting: "#7d8597"     // серо-стальной — Claude не подключён, слушать некому
