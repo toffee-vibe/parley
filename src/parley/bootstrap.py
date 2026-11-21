@@ -1,0 +1,144 @@
+"""Сборка приложения (composition root). Единственное место, где выбираются реализации портов.
+
+Заменить голос, распознавание или базу — правка только здесь.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from .application.bus import CommandBus, QueryBus
+from .application.commands import CommandHandlers, OpenEars, Tick, Timing
+from .application.listeners import HearingReporter, SpeechReporter
+from .application.queries import QueryHandlers
+from .application.state import LiveState
+from .config import Settings
+from .infrastructure.audio.ears import MicrophoneEars
+from .infrastructure.audio.models import LocalModels
+from .infrastructure.audio.mouth import QueuedMouth
+from .infrastructure.audio.pipewire import Volume
+from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, VoiceChain
+from .infrastructure.clock import SystemClock
+from .infrastructure.journal import InMemoryJournal
+from .infrastructure.openrouter import OpenRouter
+from .infrastructure.sqlite import Database, SqliteMistakes, SqlitePhrases, SqliteUtterances
+from .interfaces.mcp.runner import BackgroundServer
+from .interfaces.mcp.server import ClaudePresence, build_server
+
+log = logging.getLogger(__name__)
+
+
+class Pulse:
+    """Фоновый пульс: несколько раз в секунду выполняет команду Tick (выпустить ждущие реплики и т.п.)."""
+
+    def __init__(self, beat: Callable[[], None], every_s: float = 0.15):
+        self.beat = beat
+        self.every_s = every_s
+        self._stop = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, name="pulse", daemon=True).start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.every_s):
+            try:
+                self.beat()
+            except Exception:
+                log.exception("Пульс: команда упала")
+
+
+class Levels:
+    """Громкость для анимации: микрофон (пользователь) и голос персонажа. Пишут потоки звука, читает интерфейс."""
+
+    def __init__(self) -> None:
+        self.hearing = 0.0
+        self.voice = 0.0
+
+    def set_hearing(self, value: float) -> None:
+        self.hearing = value
+
+    def set_voice(self, value: float) -> None:
+        self.voice = value
+
+
+@dataclass
+class Parley:
+    settings: Settings
+    commands: CommandBus
+    queries: QueryBus
+    journal: InMemoryJournal
+    presence: ClaudePresence
+    levels: Levels
+    voice: VoiceChain
+    volume: Volume
+    server: BackgroundServer
+    closers: list[Callable[[], None]]  # что остановить при выходе: микрофон, звук
+
+    def __post_init__(self) -> None:
+        self._pulse = Pulse(lambda: self.commands.execute(Tick()))
+
+    @property
+    def cloud_ready(self) -> bool:
+        return bool(self.settings.openrouter.api_key)
+
+    def start(self) -> None:
+        self.server.start()
+        self.commands.execute(OpenEars())
+        self._pulse.start()
+        log.info("Parley слушает. MCP: %s/mcp", self.settings.server.url)
+
+    def stop(self) -> None:
+        self._pulse.stop()
+        for close in self.closers:
+            try:
+                close()
+            except Exception:
+                log.exception("Не удалось остановить %s", close)
+        self.server.stop()
+
+
+def build(settings: Settings, with_microphone: bool = True) -> Parley:
+    clock = SystemClock()
+    journal = InMemoryJournal()
+    state = LiveState()
+    db = Database(settings.database)
+    phrases, mistakes, utterances = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db)
+    models = LocalModels(settings.models_dir)
+    openrouter = OpenRouter(settings.openrouter)
+    levels = Levels()
+
+    commands, queries = CommandBus(), QueryBus()
+
+    v = settings.voice
+    voices = [Bilingual("piper", PiperVoice(models, v.fallback_en), PiperVoice(models, v.fallback_ru))]
+    if openrouter.configured and settings.openrouter.voice_model:
+        voices.insert(0, Bilingual("cloud", CloudVoice(openrouter, v.english, "cloud-en"),
+                                   CloudVoice(openrouter, v.russian, "cloud-ru")))
+    voice = VoiceChain(*voices)
+    volume = Volume(v.volume)
+    mouth = QueuedMouth(voice, SpeechReporter(commands), v.output, on_level=levels.set_voice, volume=volume)
+
+    timing = Timing(reply_pause_s=settings.conversation.reply_pause_s)
+    handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, timing)
+    for message, handler in handlers.routes().items():
+        commands.register(message, handler)
+    for message, handler in QueryHandlers(state, journal, clock, phrases, mistakes, utterances).routes().items():
+        queries.register(message, handler)
+
+    closers: list[Callable[[], None]] = [mouth.close]
+    if with_microphone:
+        handlers.ears = MicrophoneEars(settings.hearing, models, openrouter, HearingReporter(commands),
+                                       companion_speaking=lambda: mouth.busy, voice_level=lambda: levels.voice,
+                                       on_level=levels.set_hearing)
+        closers.append(handlers.ears.close)
+
+    presence = ClaudePresence()
+    mcp = build_server(commands, queries, journal, settings.server.url, presence)
+    server = BackgroundServer(mcp, settings.server.host, settings.server.port)
+    return Parley(settings, commands, queries, journal, presence, levels, voice, volume, server, closers)
