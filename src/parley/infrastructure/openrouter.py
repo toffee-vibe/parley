@@ -106,7 +106,7 @@ def echoes_prompt(text: str, prompt: str, n: int = 4) -> bool:
         return False
     source = [w.lower() for w in _WORD.findall(prompt)]
     grams = {tuple(source[i:i + n]) for i in range(len(source) - n + 1)}
-    covered = set()
+    covered: set[int] = set()
     for i in range(len(words) - n + 1):
         if tuple(words[i:i + n]) in grams:
             covered.update(range(i, i + n))
