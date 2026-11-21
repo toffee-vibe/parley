@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import anyio
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
@@ -53,19 +53,28 @@ INSTRUCTIONS = Path(__file__).with_name("instructions.md")
 
 
 class ClaudePresence:
-    """Подключён ли Claude: интерфейс показывает это значком."""
+    """Подключён ли агент (Claude Code, Codex, opencode…): интерфейс показывает это значком.
+
+    `client` — имя агента из рукопожатия MCP: по нему, например, включается доставка событий в opencode.
+    """
 
     def __init__(self) -> None:
         self.last_call = 0.0
         self.streams = 0
+        self.client = ""
         self._lock = threading.Lock()
 
-    def touched(self) -> None:
+    def touched(self, client: str = "") -> None:
         self.last_call = time.monotonic()
+        if client:
+            self.client = client
 
     @property
     def online(self) -> bool:
-        return self.streams > 0 or time.monotonic() - self.last_call < 90
+        # opencode не держит поток и не вызывает listen: события ему доставляет Parley (infrastructure/opencode.py),
+        # а сам агент между репликами молчит. Поэтому и ждём его дольше.
+        grace = 1800 if "opencode" in self.client else 90
+        return self.streams > 0 or time.monotonic() - self.last_call < grace
 
     def stream_opened(self) -> None:
         with self._lock:
@@ -81,6 +90,10 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     instructions = INSTRUCTIONS.read_text(encoding="utf-8").replace("{url}", url)
     mcp = MCPServer("parley", title="Parley — voice companion", instructions=instructions)
 
+    def seen(ctx: Context | None) -> None:
+        """Агент что-то вызвал: он здесь. Заодно запоминаем, кто это (имя клиента MCP)."""
+        presence.touched(_client_name(ctx))
+
     def execute(command: object):
         presence.touched()
         try:
@@ -95,28 +108,31 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     # --- с чего начать ---
 
     @mcp.tool(name="instructions")
-    def read_instructions() -> str:
+    def read_instructions(ctx: Context) -> str:
         """How to be Pip: how to hear and talk, the teaching method, memory. Read it first if your client did not
         show you Parley's server instructions (some agents don't pass them to the model)."""
-        presence.touched()
+        seen(ctx)
         return instructions
 
     # --- слух и речь ---
 
     @mcp.tool()
-    async def listen(after: int = -1, timeout_s: float = 25) -> dict:
+    async def listen(ctx: Context, after: int = -1, timeout_s: float = 25) -> dict:
         """Wait for new events (long-poll). Returns {cursor, events}. Pass `cursor` back as `after` next time.
-        Use only if you can't subscribe to the event stream with Monitor."""
+        Use only if events are not delivered to you otherwise (Monitor in Claude Code, "Parley events" messages
+        in opencode)."""
+        seen(ctx)
         return await anyio.to_thread.run_sync(ask, Listen(after, min(timeout_s, 55)))
 
     @mcp.tool()
-    async def say(text: str, interrupt_user: bool = False, wait: bool = False) -> dict:
+    async def say(ctx: Context, text: str, interrupt_user: bool = False, wait: bool = False) -> dict:
         """Say something out loud as Pip. Plain spoken text, 1–3 sentences; may start sentences with an
         emotion tag like [excited], [curious], [laughing], [whispering], [sad], [surprised].
         By default Pip waits until the user has finished talking; if the user keeps talking, the reply is
         dropped (event `speech_dropped`) and you should answer again. interrupt_user=true speaks right away,
         even over the user — use it very rarely. Refused while the user has muted you.
         wait=true blocks until speech ends and returns what the user heard."""
+        seen(ctx)
         speech_id = execute(Say(text, may_interrupt_user=interrupt_user))
         return await anyio.to_thread.run_sync(ask, SpeechResult(speech_id, wait_s=90 if wait else 0))
 
@@ -127,8 +143,9 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         return "ok"
 
     @mcp.tool()
-    def status() -> dict:
+    def status(ctx: Context) -> dict:
         """Pip's state: activity (waiting/idle/hearing/thinking/speaking/deaf), mood, ears_open, current cursor."""
+        seen(ctx)
         return ask(CompanionStatus())
 
     @mcp.tool()
@@ -161,9 +178,10 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     # --- память о пользователе ---
 
     @mcp.tool()
-    def recall(topic: str = "") -> dict:
+    def recall(ctx: Context, topic: str = "") -> dict:
         """What you remember about the user from earlier sessions, grouped by topic (profile, work, projects,
         interview, life, style, session), newest first. Call it quietly when a session starts."""
+        seen(ctx)
         return ask(Recall(topic))
 
     @mcp.tool()
@@ -269,3 +287,12 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         return JSONResponse(queries.ask(CompanionStatus()))
 
     return mcp
+
+
+def _client_name(ctx: Context | None) -> str:
+    """Имя агента из рукопожатия MCP: "claude-code", "opencode", "codex-mcp-client"…"""
+    try:
+        params = ctx.session.client_params if ctx else None
+        return (params.client_info.name if params and params.client_info else "").lower()
+    except Exception:  # noqa: BLE001 — нет запроса (вызов из тестов) или клиент не представился
+        return ""

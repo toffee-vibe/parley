@@ -35,10 +35,15 @@ the bottleneck, not reading. Speak slightly above the user's level.
 
 ## How to hear and talk
 
-1. Subscribe to events. Preferred (Claude Code): start the Monitor tool on
-   `curl -sN {url}/events.ndjson` — every line is one JSON event. Any other agent (Codex, opencode, …):
-   call `listen` in a loop — long-poll, pass the returned `cursor` back as `after`, and call it again right after
-   you handled the events. While you are not inside `listen`, you don't hear the user.
+1. Get the events. How depends on your agent:
+   - **Claude Code:** start the Monitor tool on `curl -sN {url}/events.ndjson` — every line is one JSON event.
+   - **opencode:** nothing to do — Parley delivers events to your session itself, as messages starting with
+     "Parley events (from the microphone, not typed by the user):" followed by one JSON event per line.
+     Treat them as the user speaking to you. Do NOT call `listen`. Just call any Parley tool once (e.g. `recall`)
+     when the session starts, so Parley knows you are here.
+   - **Any other agent (Codex, …):** call `listen` in a loop — long-poll, pass the returned `cursor` back as
+     `after`, and call it again right after you handled the events. While you are not inside `listen`,
+     you don't hear the user.
 2. Events you get:
    - `heard` — the user said something: `text`, `language` (en / ru / mixed), `english_share`, `words`, `duration_s`.
      The user may still be in the middle of a thought — a `heard` is one phrase between pauses.

@@ -17,7 +17,7 @@ from .application.commands import CommandHandlers, OpenEars, PartnerArrived, Par
 from .application.listeners import HearingReporter, SpeechReporter
 from .application.queries import QueryHandlers
 from .application.state import LiveState
-from .config import Settings
+from .config import PROJECT_DIR, Settings
 from .infrastructure.audio.devices import Volume, backend
 from .infrastructure.audio.ears import MicrophoneEars
 from .infrastructure.audio.models import LocalModels
@@ -27,6 +27,7 @@ from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, Voic
 from .infrastructure.clock import SystemClock
 from .infrastructure.diary import Diary
 from .infrastructure.journal import InMemoryJournal
+from .infrastructure.opencode import OpencodeBridge, OpencodeCli
 from .infrastructure.openrouter import OpenRouter
 from .infrastructure.sqlite import Database, SqliteFacts, SqliteMistakes, SqlitePhrases, SqliteUtterances
 from .interfaces.mcp.runner import BackgroundServer
@@ -169,6 +170,9 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
         closers.append(handlers.ears.close)
 
     presence = ClaudePresence()
+    # opencode не умеет подписаться на поток событий — Parley доставляет их в его сессию сам
+    bridge = OpencodeBridge(OpencodeCli(PROJECT_DIR), partner=lambda: presence.client)
+    journal.subscribe(bridge.on_entry)
     mcp = build_server(commands, queries, journal, settings.server.url, presence, diary)
     server = BackgroundServer(mcp, settings.server.host, settings.server.port)
     return Parley(settings, commands, queries, journal, presence, levels, voice, volume, server, closers, diary)

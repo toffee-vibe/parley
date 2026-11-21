@@ -42,6 +42,10 @@ uv run parley agents              # проверить, к каким агент
    Подойдёт Claude Code (`claude`), Codex (`codex`) или opencode (`opencode`). Инструкцию, как слушать и
    как учить, агент получает сам при подключении (поле MCP `instructions` или инструмент `instructions`).
 
+   Как агент тебя слышит: Claude Code подписывается на поток событий (Monitor); в opencode Parley сам
+   присылает услышанное в его сессию (через `opencode api`, сообщением «Parley events…») — агенту не нужно
+   ничего ждать; Codex опрашивает Parley инструментом `listen`.
+
    **Parley подключается только в этой папке.** Каждый агент берёт сервер из файла проекта:
    `.mcp.json` (Claude Code спросит разрешение при первом запуске), `.codex/config.toml` (Codex читает его,
    когда проект отмечен доверенным), `opencode.json`. В других папках агенты о Parley не знают и к нему

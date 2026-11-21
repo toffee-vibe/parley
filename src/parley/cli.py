@@ -105,7 +105,7 @@ def _request(settings: config.Settings, path: str, method: str = "GET") -> str:
         sys.exit(f"Parley не запущен ({e})")
 
 
-PROJECT = Path(__file__).resolve().parents[2]  # корень репозитория (src/parley/cli.py → ../..)
+PROJECT = config.PROJECT_DIR
 
 # Где каждый агент берёт MCP-серверы проекта и как убрать глобальную регистрацию.
 AGENTS = {

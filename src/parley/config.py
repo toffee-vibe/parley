@@ -14,6 +14,7 @@ from typing import Any
 CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "parley"
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "parley"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
+PROJECT_DIR = Path(__file__).resolve().parents[2]  # корень репозитория: здесь агенты подключаются к Parley
 
 DEFAULT_CONFIG = """\
 # Parley — настройки. После правки перезапусти приложение.
