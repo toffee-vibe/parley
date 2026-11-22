@@ -7,7 +7,7 @@ import anyio
 from mcp import Client
 
 from parley.application.bus import CommandBus, QueryBus
-from parley.application.commands import Say
+from parley.application.commands import Say, ShowBoard
 from parley.application.queries import Listen, QueryHandlers, SpeechResult
 from parley.application.state import LiveState
 from parley.domain.conversation import SoundNoticed, Utterance, heard
@@ -56,3 +56,27 @@ def test_noise_does_not_wake_the_agent():
                      SoundNoticed(at=NOW, label="Laughter", confidence=0.7)])
     events = call(mcp, "listen", after=cursor, timeout_s=0)["events"]
     assert [e["label"] for e in events] == ["Laughter"]
+
+
+def test_monitor_agent_reply_is_not_spoken_when_user_added_a_phrase_meanwhile():
+    """Агент без listen (Monitor, opencode): одну фразу после прошлого ответа он видел, две — уже нет."""
+    mcp, journal, spoken = server()
+    call(mcp, "say", text="Hi! What did you do today?")
+    journal.publish([heard(Utterance("I fixed a bug", NOW, 1.0), NOW)])
+    journal.publish([heard(Utterance("actually two bugs", NOW, 1.0), NOW)])   # пока агент думал
+    answer = call(mcp, "say", text="Nice, what bug?")
+    assert answer["status"] == "not_spoken"
+    assert [e["text"] for e in answer["events"]] == ["I fixed a bug", "actually two bugs"]
+    assert call(mcp, "say", text="Two bugs? Tell me about them.")["status"] == "queued"
+    assert spoken == ["Hi! What did you do today?", "Two bugs? Tell me about them."]
+
+
+def test_board_comes_with_the_line_in_one_call():
+    journal, commands, queries = InMemoryJournal(), CommandBus(), QueryBus()
+    shown = []
+    commands.register(Say, lambda c: "s1")
+    commands.register(ShowBoard, lambda c: shown.append(c.title))
+    queries.register(SpeechResult, lambda q: {"speech_id": q.speech_id, "status": "queued"})
+    mcp = build_server(commands, queries, journal, "http://x", ClaudePresence(), NullDiary())
+    call(mcp, "say", text="Look at the table.", board_title="Past Simple", board="| I | did |")
+    assert shown == ["Past Simple"]

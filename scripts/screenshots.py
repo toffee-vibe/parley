@@ -94,6 +94,8 @@ def main() -> None:
     engine.addImportPath(str(gui.HERE / "qml"))
     engine.load(gui.HERE / "qml" / "Main.qml")
     window = engine.rootObjects()[0]
+    if size := os.environ.get("PARLEY_SNAP_SIZE"):  # например 1920x1080 — как во весь экран
+        window.resize(*map(int, size.split("x")))
     run = parley.commands.execute
     now = SystemClock().now
 

@@ -67,7 +67,7 @@ Item {
         text: root.hint
         color: Theme.textMuted
         font.family: Theme.font
-        font.pixelSize: 18
+        font.pixelSize: Theme.hintSize
         font.weight: Font.Medium
         lineHeight: 1.2
     }

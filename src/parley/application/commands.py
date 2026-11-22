@@ -343,6 +343,8 @@ class CommandHandlers:
             return  # шум, пустая фраза или слушать уже некому (агент ушёл, слух выключили)
         self.state.turn.append(utterance)
         now = self.clock.now()
+        # Пока ответ ждал тишины, человек сказал новые слова — ответ устарел (шум и кашель его не отменяют).
+        self._after_stop([s for s in self.state.waiting if s.user_started_talking(now)])
         if self.companion.activity is Activity.HEARING:
             self.journal.publish([UserSaying(at=now, text=joined(self.state.turn).text)])
         else:
@@ -391,6 +393,12 @@ class CommandHandlers:
             raise CompanionIsDeaf("Пользователь выключил компаньону слух — сейчас говорить нельзя")
         speech = Speech(text=command.text, may_interrupt_user=command.may_interrupt_user)
         self.state.remember(speech)
+        if self.state.turn and self.companion.activity is Activity.HEARING and not speech.may_interrupt_user:
+            # Человек уже говорит новое (слова распознаны), а агент их ещё не получил: ответ написан на старое.
+            # Не держим его до конца фразы (прозвучал бы мимо) — агент получит speech_dropped, а потом новую фразу.
+            speech.stop(self.clock.now())
+            self._publish(speech)
+            return speech.id
         pause = timedelta(seconds=self.timing.reply_pause_s)
         if speech.may_interrupt_user or (not self.state.waiting and self.companion.user_is_quiet(self.clock.now(), pause)):
             self.mouth.say(speech.id, speech.text)

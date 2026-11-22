@@ -92,7 +92,8 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     instructions = INSTRUCTIONS.read_text(encoding="utf-8").replace("{url}", url)
     mcp = MCPServer("parley", title="Parley — voice companion", instructions=instructions)
 
-    delivered: dict[str, int | None] = {"cursor": None}  # до какого события агент дочитал через listen
+    delivered: dict[str, int | None] = {"cursor": None,    # до какого события агент дочитал через listen
+                                        "answered": None}  # последнее событие на момент прошлого say
 
     def seen(ctx: Context | None) -> None:
         """Агент что-то вызвал: он здесь. Заодно запоминаем, кто это (имя клиента MCP)."""
@@ -134,22 +135,32 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         return result
 
     @mcp.tool()
-    async def say(ctx: Context, text: str, interrupt_user: bool = False, wait: bool = False) -> dict:
+    async def say(ctx: Context, text: str, interrupt_user: bool = False, wait: bool = False,
+                  board_title: str = "", board: str = "") -> dict:
         """Say something out loud as Pip. Plain spoken text, 1–3 sentences; may start sentences with an
         emotion tag like [excited], [curious], [laughing], [whispering], [sad], [surprised].
+        board_title + board (Markdown): show a board together with this line, in the same call — the user sees
+        it as Pip starts talking. Prefer this to a separate show_board call: every extra tool call delays the voice.
         By default Pip waits until the user has finished talking; if the user keeps talking, the reply is
         dropped (event `speech_dropped`) and you should answer again. interrupt_user=true speaks right away,
         even over the user — use it very rarely. Refused while the user has muted you.
+        If the user said something new while you were thinking, the reply is not spoken: you get
+        `"status": "not_spoken"` with what they said — answer that.
         wait=true blocks until speech ends and returns what the user heard."""
         seen(ctx)
-        unseen = _unseen_speech(journal, delivered.get("cursor"))
+        unseen = _unseen_speech(journal, delivered.get("cursor"), delivered.get("answered"))
+        delivered["answered"] = journal.last_seq()
         if unseen and not interrupt_user:
-            # Агент слушает через listen и ещё не видел новую фразу: отвечать на старое — значит говорить мимо.
-            delivered["cursor"] = journal.last_seq()
-            return {"status": "not_spoken", "reason": "The user said something new that you have not seen yet. "
-                    "Answer that instead (your reply was not spoken).",
-                    "cursor": delivered["cursor"], "events": [e.as_dict() for e in unseen]}
+            # Пока агент думал, пользователь сказал ещё что-то: ответ на старое прозвучал бы мимо.
+            if delivered.get("cursor") is not None:
+                delivered["cursor"] = journal.last_seq()
+            return {"status": "not_spoken", "reason": "While you were thinking the user said something new. "
+                    "Your reply was not spoken. Answer their latest words (if your reply already covers them, "
+                    "call say again with it).",
+                    "cursor": journal.last_seq(), "events": [e.as_dict() for e in unseen]}
         speech_id = execute(Say(text, may_interrupt_user=interrupt_user))
+        if board_title or board:
+            execute(ShowBoard(board_title, board))
         return await anyio.to_thread.run_sync(ask, SpeechResult(speech_id, wait_s=90 if wait else 0))
 
     @mcp.tool()
@@ -181,6 +192,7 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     @mcp.tool()
     def show_board(title: str, markdown: str) -> str:
         """Show a board next to Pip: an explanation, a rule, a table (e.g. English tenses), examples.
+        If you are about to say something with it, pass the board to `say` instead (same call, no delay).
         Markdown with tables, lists, **bold**, `code`. Pip steps aside while the board is open. Russian is fine here."""
         execute(ShowBoard(title, markdown))
         return "ok"
@@ -322,9 +334,16 @@ def _client_name(ctx: Context | None) -> str:
         return ""
 
 
-def _unseen_speech(journal: Journal, cursor: int | None) -> list:
-    """События для агента после курсора listen — если среди них есть новая фраза пользователя."""
-    if cursor is None:
-        return []  # агент не пользуется listen (Monitor, opencode) — события он видит сразу
-    fresh = [e for e in journal.after(cursor) if for_agent(e)]
-    return fresh if any(e.kind == "heard" for e in fresh) else []
+def _unseen_speech(journal: Journal, cursor: int | None, answered: int | None) -> list:
+    """Новые фразы пользователя, которых агент, отвечая сейчас, скорее всего не видел.
+
+    Агент с listen: всё после курсора — точно. Агенту, которому события приходят сами (Monitor, opencode),
+    мы не знаем, что он прочёл. Но одну фразу после прошлого ответа он видел — на неё и отвечает; если их
+    уже две и больше, значит, пока он думал, пользователь сказал ещё что-то."""
+    if cursor is not None:
+        fresh = [e for e in journal.after(cursor) if for_agent(e)]
+        return fresh if any(e.kind == "heard" for e in fresh) else []
+    if answered is None:
+        return []
+    said = [e for e in journal.after(answered) if e.kind == "heard"]
+    return said if len(said) >= 2 else []

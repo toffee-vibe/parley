@@ -25,6 +25,7 @@ Window {
     readonly property bool centered: !boardOpen   // сбоку ничего нет — Пип и панель по центру
 
     Binding { target: Theme; property: "dark"; value: parley.darkTheme }
+    Binding { target: Theme; property: "zoom"; value: Math.max(1, Math.min(2.2, Math.min(window.width / 980, window.height / 700))) }
 
     // ---------- шапка ----------
     Text {
@@ -41,7 +42,7 @@ Window {
         spacing: 10
         Rectangle { // Claude на связи?
             anchors.verticalCenter: parent.verticalCenter
-            height: 34; radius: 17
+            height: claude.implicitHeight + 16; radius: height / 2
             width: claude.implicitWidth + 28
             color: parley.claudeOnline ? Theme.okBg : Theme.surface
             Text {
@@ -50,7 +51,7 @@ Window {
                 text: parley.claudeOnline ? "● " + parley.agentName + " на связи" : "○ Жду агента"
                 color: parley.claudeOnline ? Theme.ok : Theme.textMuted
                 font.family: Theme.font
-                font.pixelSize: 14
+                font.pixelSize: Theme.chipSize
                 font.weight: Font.Bold
             }
         }
@@ -72,7 +73,7 @@ Window {
     Item {
         id: stage
         x: window.margin
-        y: 84
+        y: 60 + 24 * Theme.zoom
         width: (window.boardOpen && window.wide ? window.width * 0.42 : window.width) - window.margin * 2
         height: window.height - y - 110
         visible: !(window.boardOpen && !window.wide)
@@ -89,7 +90,7 @@ Window {
 
         Pip {
             id: pip
-            readonly property real size: window.boardOpen ? 220 : Math.min(280, stage.width * 0.5)
+            readonly property real size: (window.boardOpen ? 220 : Math.min(280, stage.width * 0.5 / Theme.zoom)) * Theme.zoom
             x: window.centered ? (stage.width - width) / 2 : 0
             y: Math.max(64, bubble.visible ? bubble.height + 20 : 0)
             Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
@@ -146,7 +147,7 @@ Window {
         id: board
         title: parley.boardTitle
         markdown: parley.boardMarkdown
-        y: 84
+        y: stage.y
         width: window.wide ? window.width * 0.58 - window.margin : window.width - window.margin * 2
         height: window.height - y - 110
         x: window.boardOpen ? window.width - width - window.margin : window.width + 60
@@ -163,6 +164,8 @@ Window {
         x: window.centered ? (window.width - width) / 2 : window.margin
         anchors { bottom: parent.bottom; bottomMargin: 28 }
         Behavior on x { NumberAnimation { duration: Theme.slow; easing.type: Easing.OutCubic } }
+        scale: Math.min(Theme.zoom, 1.5)          // во весь экран — крупнее, растёт от нижнего края
+        transformOrigin: window.centered ? Item.Bottom : Item.BottomLeft
         activity: parley.activity
         volume: parley.volume
         onToggleEars: parley.toggleEars()

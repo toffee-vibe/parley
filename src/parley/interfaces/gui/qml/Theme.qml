@@ -58,14 +58,20 @@ QtObject {
     function stateColor(activity) { return pipColor(activity, "neutral") }
 
     // --- шрифт и размеры ---
+    // zoom — во сколько раз окно больше обычного (980×700). Во весь экран текст и Пип растут вместе с окном,
+    // а не остаются мелкими посреди пустоты. Задаёт Main.qml.
+    property real zoom: 1
+    function px(size) { return Math.round(size * zoom) }
     readonly property string font: "Rubik"
-    readonly property int wordmarkSize: 26
-    readonly property int heardSize: 16        // твоя фраза
-    readonly property int speechSize: 40       // реплика Пипа
-    readonly property int speechSizeCompact: 28  // реплика, когда открыта доска
-    readonly property int labelSize: 15
-    readonly property int boardTitleSize: 32
-    readonly property int boardTextSize: 16
+    readonly property int wordmarkSize: px(26)
+    readonly property int heardSize: px(17)        // твоя фраза
+    readonly property int speechSize: px(40)       // реплика Пипа
+    readonly property int speechSizeCompact: px(28)  // реплика, когда открыта доска
+    readonly property int labelSize: px(15)
+    readonly property int hintSize: px(18)
+    readonly property int chipSize: px(14)
+    readonly property int boardTitleSize: px(32)
+    readonly property int boardTextSize: px(17)
     readonly property int radius: 32
 
     // --- анимации (мс) ---

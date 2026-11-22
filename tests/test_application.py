@@ -276,3 +276,34 @@ def test_what_sounds_unfinished():
     assert sounds_unfinished("and then I")
     assert not sounds_unfinished("I made it yesterday.")
     assert not sounds_unfinished("Как сказать «услышал»?")
+
+
+def test_reply_written_before_the_users_new_words_is_not_spoken_after_them(app):
+    """Агент думал над первой фразой, а ты уже говоришь вторую: его ответ не должен прозвучать после неё."""
+    commands, queries, clock, mouth = app
+    speak(commands, clock, "What does hedge mean?")
+    part(commands, clock, "oh wait, I remember")           # пока агент думал, ты заговорил снова
+    stale = commands.execute(Say("Hedge means to protect yourself."))
+    end_turn(commands, clock)
+    assert all(sid != stale for sid, _ in mouth.said)
+    assert "speech_dropped" in kinds(queries)
+
+
+def test_reply_waiting_for_silence_is_dropped_when_new_words_arrive(app):
+    commands, queries, clock, mouth = app
+    speak(commands, clock, "What does hedge mean?")
+    commands.execute(UserStartedTalking())
+    commands.execute(UserPaused(transcribing=True))         # слова ещё распознаются…
+    stale = commands.execute(Say("Hedge means to protect yourself."))
+    commands.execute(UserFinishedTalking(Utterance("never mind", clock.now(), 1.0)))  # …и оказались новыми
+    end_turn(commands, clock)
+    assert all(sid != stale for sid, _ in mouth.said)
+
+
+def test_a_cough_does_not_cancel_the_reply(app):
+    commands, queries, clock, mouth = app
+    speak(commands, clock, "What does hedge mean?")
+    reply = commands.execute(Say("Hedge means to protect yourself."))
+    clock.moment += timedelta(seconds=2)
+    commands.execute(Tick())
+    assert mouth.said[-1][0] == reply
