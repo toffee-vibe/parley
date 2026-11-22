@@ -37,7 +37,6 @@ class Timing:
     reply_pause_s: float = 1.2      # сколько тишины после фразы человека, прежде чем говорить
     turn_end_s: float = 2.5         # сколько молчать, чтобы мысль считалась законченной и ушла агенту
     thinking_patience_s: float = 25  # через сколько перестать «думать», если ответа нет
-    murmur_after_s: float = 1.0      # через сколько после конца хода отозваться «Hmm», пока агент думает; 0 — никогда
     stuck_transcription_s: float = 30  # распознавание не вернулось за столько — не ждём его, отдаём ход
 
 
@@ -289,7 +288,6 @@ class CommandHandlers:
         """Человек заговорил — всё, чему не разрешено его перебивать, замолкает или отменяется."""
         now = self.clock.now()
         self.companion.user_started_talking(now)
-        self.mouth.hush()
         stopped = [s for s in self.state.unfinished_speeches() + self.state.waiting if s.user_started_talking(now)]
         self._after_stop(stopped)
         self._publish(self.companion)
@@ -340,17 +338,8 @@ class CommandHandlers:
             for speech in self.state.waiting:
                 self.mouth.say(speech.id, speech.text)
             self.state.waiting.clear()
-        self._maybe_murmur(now)
         self._publish(self.companion)
 
-    def _maybe_murmur(self, now: datetime) -> None:
-        """Claude думает дольше обычной паузы — Пип отзывается, чтобы не висела мёртвая тишина."""
-        if self.timing.murmur_after_s <= 0 or self.state.waiting or self.state.unfinished_speeches() \
-                or self.mouth.busy:
-            return
-        if self.companion.wants_to_murmur(now, timedelta(seconds=self.timing.murmur_after_s)):
-            self.companion.murmur()
-            self.mouth.murmur()
 
     # --- речь ---
 

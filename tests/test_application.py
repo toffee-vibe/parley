@@ -45,8 +45,6 @@ class FakeMouth:
     def __init__(self):
         self.said: list[tuple[str, str]] = []
         self.cancelled: set[str] = set()
-        self.murmurs = 0
-        self.hushed = 0
 
     @property
     def busy(self):
@@ -57,12 +55,6 @@ class FakeMouth:
 
     def cancel(self, speech_ids):
         self.cancelled |= speech_ids
-
-    def murmur(self):
-        self.murmurs += 1
-
-    def hush(self):
-        self.hushed += 1
 
 
 @pytest.fixture
@@ -261,32 +253,3 @@ def test_recall_shows_only_recent_session_notes(app):
         commands.execute(Remember(f"Session {day}: talked about tests", "session"))
     notes = queries.ask(Recall())["facts"]["session"]
     assert len(notes) == 5 and notes[0]["text"].startswith("Session 7")
-
-
-def test_pip_murmurs_once_while_claude_thinks(app):
-    commands, _, clock, mouth = app
-    speak(commands, clock, "I worked on data pipelines", 2.0)
-    assert mouth.murmurs == 0                  # сразу после конца мысли — рано: может, агент ответит быстро
-    clock.moment += timedelta(seconds=1.1)
-    commands.execute(Tick())
-    commands.execute(Tick())
-    assert mouth.murmurs == 1                  # один раз за ход, не «хм-хм-хм»
-
-    hushed = mouth.hushed
-    commands.execute(UserStartedTalking())     # заговорил снова — отклик обрывается
-    assert mouth.hushed == hushed + 1
-    commands.execute(UserPaused(transcribing=True))
-    commands.execute(UserFinishedTalking(Utterance("and Airflow", clock.now(), 1.0)))
-    end_turn(commands, clock)
-    clock.moment += timedelta(seconds=1.1)
-    commands.execute(Tick())
-    assert mouth.murmurs == 2                  # новый ход — можно отозваться снова
-
-
-def test_no_murmur_when_reply_is_already_coming(app):
-    commands, _, clock, mouth = app
-    speak(commands, clock, "Hello")
-    commands.execute(Say("Hi! How was your day?"))  # Claude ответил быстро
-    clock.moment += timedelta(seconds=2)
-    commands.execute(Tick())
-    assert mouth.murmurs == 0

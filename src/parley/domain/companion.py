@@ -13,8 +13,6 @@
 До этого компаньон остаётся в `hearing` — слушает и не может заговорить, даже если человек
 задумался посреди фразы.
 
-Пока Claude думает над ответом, компаньон не молчит мёртво: вскоре после конца хода он один раз
-отзывается коротким «Hmm» / «Right» (`wants_to_murmur`) — как живой собеседник, который услышал и думает.
 
 Ещё компаньон умеет показывать доску: табличку, правило, пример — и тогда отходит в сторону.
 """
@@ -92,7 +90,6 @@ class Companion(Aggregate):
     board_open: bool = False
     ears_open: bool = True                  # выбор пользователя: кнопка микрофона
     partner_here: bool = False              # подключён ли Claude — тот, кто слушает и отвечает
-    murmured: bool = False                  # уже отозвался «Hmm» на последнюю фразу пользователя
 
     @property
     def listening(self) -> bool:
@@ -151,7 +148,6 @@ class Companion(Aggregate):
         if self.activity is Activity.HEARING:
             self.voice_active = False
             self.voice_ended_at = self.voice_ended_at or now
-            self.murmured = False
             self._become(Activity.THINKING if said_something else self._resting(), now)
 
     def user_is_quiet(self, now: datetime, pause: timedelta) -> bool:
@@ -159,14 +155,6 @@ class Companion(Aggregate):
         if self.activity is Activity.HEARING:
             return False
         return self.voice_ended_at is None or now - self.voice_ended_at >= pause
-
-    def wants_to_murmur(self, now: datetime, after: timedelta) -> bool:
-        """Ход окончен, агент думает уже `after` — пора отозваться (один раз за ход)."""
-        return (self.activity is Activity.THINKING and not self.murmured and self.since is not None
-                and now - self.since >= after)
-
-    def murmur(self) -> None:
-        self.murmured = True
 
     def settle(self, now: datetime, patience: timedelta) -> None:
         """Claude решил не отвечать (или не подключён) — не «думаем» вечно."""

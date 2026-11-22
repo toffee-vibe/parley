@@ -63,12 +63,6 @@ class SilentMouth:
     def cancel(self, speech_ids):
         pass
 
-    def murmur(self):
-        pass
-
-    def hush(self):
-        pass
-
 
 def wait(ms: int) -> None:
     loop = QEventLoop()
@@ -82,7 +76,6 @@ def main() -> None:
     settings = config.Settings()
     settings.server.port = 8798
     settings.openrouter.api_key = "preview"
-    settings.conversation.murmur_after_s = 0  # не синтезировать «Hmm» (сеть не нужна)
     settings.conversation.turn_end_s = 0.3    # ход заканчивается быстро — снимки не ждут
 
     gui.prepare_qt()

@@ -106,12 +106,6 @@ class Mouth(Protocol):
     def cancel(self, speech_ids: set[str]) -> None:
         """Оборвать эти реплики: звучащую — сразу, ждущие в очереди — выбросить. Не блокирует."""
         ...
-    def murmur(self) -> None:
-        """Короткое «Hmm» / «Right» вне реплик: Claude о нём не узнаёт. Не блокирует."""
-        ...
-    def hush(self) -> None:
-        """Оборвать «Hmm», если звучит (человек снова заговорил)."""
-        ...
 
 
 class HearingListener(Protocol):

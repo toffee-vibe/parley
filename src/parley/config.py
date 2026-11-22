@@ -64,7 +64,6 @@ sound_cooldown_s = 10     # один и тот же звук — не чаще �
 [conversation]
 turn_end_s = 2.5          # сколько молчать, чтобы мысль считалась законченной и ушла агенту; не успеваешь договорить — увеличь
 reply_pause_s = 1.2       # сколько молчать после твоей фразы, прежде чем отвечать (не перебивать тебя)
-murmur_after_s = 1.0      # через столько после конца твоей мысли, если агент ещё думает, Пип отзовётся «Hmm»; 0 — выключить
 
 [server]
 host = "127.0.0.1"
@@ -116,7 +115,6 @@ class HearingSettings:
 class ConversationSettings:
     turn_end_s: float = 2.5       # сколько молчать, чтобы мысль считалась законченной и ушла агенту
     reply_pause_s: float = 1.2
-    murmur_after_s: float = 1.0   # через сколько после конца хода Пип отзовётся «Hmm», если агент ещё думает; 0 — никогда
 
 
 @dataclass
@@ -145,11 +143,6 @@ class Settings:
     @property
     def database(self) -> Path:
         return DATA_DIR / "parley.db"
-
-    @property
-    def murmurs_dir(self) -> Path:
-        """Заготовленные «Hmm» / «Right» (infrastructure/audio/murmurs.py)."""
-        return DATA_DIR / "murmurs"
 
     @property
     def diary_dir(self) -> Path:
