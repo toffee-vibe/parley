@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ..application.ports import JournalEntry
-from ..application.queries import FOR_CLAUDE
+from ..application.queries import for_agent
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class OpencodeBridge:
         return "opencode" in self.partner()
 
     def on_entry(self, entry: JournalEntry) -> None:
-        if entry.kind in FOR_CLAUDE and self.active:
+        if for_agent(entry) and self.active:
             self._events.put(entry)
 
     def _run(self) -> None:

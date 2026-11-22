@@ -45,7 +45,7 @@ from ...application.commands import (
     ToggleEars,
 )
 from ...application.ports import Journal, Recorder
-from ...application.queries import FOR_CLAUDE, CompanionStatus, DuePhrases, Listen, Progress, Recall, SpeechResult
+from ...application.queries import CompanionStatus, DuePhrases, Listen, Progress, Recall, SpeechResult, for_agent
 from ...domain.companion import Mood
 from ...domain.learning import MistakeKind, ReviewOutcome
 
@@ -90,6 +90,8 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
     instructions = INSTRUCTIONS.read_text(encoding="utf-8").replace("{url}", url)
     mcp = MCPServer("parley", title="Parley — voice companion", instructions=instructions)
 
+    delivered: dict[str, int | None] = {"cursor": None}  # до какого события агент дочитал через listen
+
     def seen(ctx: Context | None) -> None:
         """Агент что-то вызвал: он здесь. Заодно запоминаем, кто это (имя клиента MCP)."""
         presence.touched(_client_name(ctx))
@@ -122,7 +124,9 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         Use only if events are not delivered to you otherwise (Monitor in Claude Code, "Parley events" messages
         in opencode)."""
         seen(ctx)
-        return await anyio.to_thread.run_sync(ask, Listen(after, min(timeout_s, 55)))
+        result = await anyio.to_thread.run_sync(ask, Listen(after, min(timeout_s, 55)))
+        delivered["cursor"] = result["cursor"]
+        return result
 
     @mcp.tool()
     async def say(ctx: Context, text: str, interrupt_user: bool = False, wait: bool = False) -> dict:
@@ -133,6 +137,13 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
         even over the user — use it very rarely. Refused while the user has muted you.
         wait=true blocks until speech ends and returns what the user heard."""
         seen(ctx)
+        unseen = _unseen_speech(journal, delivered.get("cursor"))
+        if unseen and not interrupt_user:
+            # Агент слушает через listen и ещё не видел новую фразу: отвечать на старое — значит говорить мимо.
+            delivered["cursor"] = journal.last_seq()
+            return {"status": "not_spoken", "reason": "The user said something new that you have not seen yet. "
+                    "Answer that instead (your reply was not spoken).",
+                    "cursor": delivered["cursor"], "events": [e.as_dict() for e in unseen]}
         speech_id = execute(Say(text, may_interrupt_user=interrupt_user))
         return await anyio.to_thread.run_sync(ask, SpeechResult(speech_id, wait_s=90 if wait else 0))
 
@@ -258,7 +269,7 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
                         continue
                     after = entries[-1].seq
                     for entry in entries:
-                        if entry.kind in FOR_CLAUDE:
+                        if for_agent(entry):
                             yield render(entry.as_dict())
             finally:
                 presence.stream_closed()
@@ -296,3 +307,11 @@ def _client_name(ctx: Context | None) -> str:
         return (params.client_info.name if params and params.client_info else "").lower()
     except Exception:  # noqa: BLE001 — нет запроса (вызов из тестов) или клиент не представился
         return ""
+
+
+def _unseen_speech(journal: Journal, cursor: int | None) -> list:
+    """События для агента после курсора listen — если среди них есть новая фраза пользователя."""
+    if cursor is None:
+        return []  # агент не пользуется listen (Monitor, opencode) — события он видит сразу
+    fresh = [e for e in journal.after(cursor) if for_agent(e)]
+    return fresh if any(e.kind == "heard" for e in fresh) else []

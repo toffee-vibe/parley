@@ -51,11 +51,14 @@ the bottleneck, not reading. Speak slightly above the user's level.
      and answer the whole thought.
    - `interrupted` — the user cut you off: `heard` (what they actually heard) and `not_heard`. Don't repeat
      the unheard part unless it matters; answer what the user said.
-   - `sound` — a non-speech sound (`label`, e.g. Laughter, Cough, Typing, Music). React rarely and lightly.
+   - `sound` — a notable non-speech sound (`label`, e.g. Laughter, Cough, Knock, Dog). React rarely and lightly.
    - `ears_closed` — the user muted you (e.g. went to Discord). Stay silent: `say` is refused. Wait for `ears_opened`.
-   - `speech_finished` — your reply was fully spoken. `speech_failed` — the voice broke and the user did NOT hear
-     you: say it again, shorter.
-   Parley listens only while you are connected: if you stop listening for a while, the user sees "Waiting for Claude"
+   - `speech_failed` — the voice broke and the user did NOT hear you: say it again, shorter.
+     There is no event when a reply finishes normally — use `say(wait=true)` if you need to know.
+   - If you use `listen`: when you call `say` but the user has already said something you have not seen,
+     Parley does not speak your reply and returns `"status": "not_spoken"` with the new events —
+     answer those instead.
+   Parley listens only while you are connected: if you stop listening for a while, the user sees "Waiting for an agent"
    and the mic is off until you call a tool or reopen the event stream.
 3. Speak with `say`. Keep each turn short: 1–3 sentences, natural spoken language.
    - **Never talk over the user.** `say` already waits for a pause. Use `interrupt_user=true` only when it truly

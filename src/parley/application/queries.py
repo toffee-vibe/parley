@@ -8,12 +8,25 @@ from datetime import timedelta
 from statistics import mean
 
 from ..domain.learning import Phrase
-from .ports import Clock, FactRepository, Journal, MistakeRepository, PhraseRepository, UtteranceLog
+from .ports import Clock, FactRepository, Journal, JournalEntry, MistakeRepository, PhraseRepository, UtteranceLog
 from .state import LiveState
 
-# То, что важно Claude. Остальное (смена выражения лица, начало реплики) нужно только интерфейсу.
-FOR_CLAUDE = frozenset({"heard", "sound", "interrupted", "speech_dropped", "speech_finished", "speech_failed",
-                        "ears_closed", "ears_opened"})
+# Что отдавать агенту. Каждое событие будит его, а шаг модели стоит секунды (у Kimi — 4–6 с):
+# пока он «думает» над лишним событием, твоя новая фраза ждёт. Поэтому только то, на что стоит отвечать.
+# speech_finished не отдаём: дождаться конца реплики можно через say(wait=true).
+FOR_AGENT = frozenset({"heard", "sound", "interrupted", "speech_dropped", "speech_failed", "ears_closed", "ears_opened"})
+# Звуки, о которых агенту стоит знать. Остальное детектор часто путает с голосом и шумом
+# («Mantra», «Beatboxing», «Frog» на обычной речи) — такое агенту не нужно.
+NOTABLE_SOUNDS = ("Laugh", "Giggle", "Chuckle", "Cough", "Sneeze", "Applause", "Clapping", "Knock", "Doorbell",
+                  "Ding-dong", "Telephone", "Ringtone", "Dog", "Bark", "Cat", "Meow", "Baby cry", "Crying", "Sigh",
+                  "Yawn", "Alarm", "Siren")
+
+
+def for_agent(entry: JournalEntry) -> bool:
+    if entry.kind not in FOR_AGENT:
+        return False
+    return entry.kind != "sound" or any(word in entry.data.get("label", "") for word in NOTABLE_SOUNDS)
+
 
 
 @dataclass(frozen=True)
@@ -92,7 +105,7 @@ class QueryHandlers:
         after = self.journal.last_seq() if query.after < 0 else query.after
         deadline = time.monotonic() + max(query.timeout_s, 0)
         while True:
-            entries = [e for e in self.journal.wait(after, deadline - time.monotonic()) if e.kind in FOR_CLAUDE]
+            entries = [e for e in self.journal.wait(after, deadline - time.monotonic()) if for_agent(e)]
             fresh = self.journal.last_seq()
             if entries or time.monotonic() >= deadline:
                 return {"cursor": fresh, "events": [e.as_dict() for e in entries]}
