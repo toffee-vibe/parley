@@ -62,6 +62,13 @@ class UserSaid(DomainEvent):
     english_share: float
     words: int
     duration_s: float
+    bring_back: str = ""   # подсказка агенту: какую сохранённую фразу вернуть в разговор (не каждый ход)
+
+    def as_dict(self) -> dict:
+        data = super().as_dict()
+        if not self.bring_back:
+            data.pop("bring_back")
+        return data
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -102,8 +109,9 @@ class SoundNoticed(DomainEvent):
     confidence: float
 
 
-def heard(utterance: Utterance, now: datetime) -> UserSaid:
+def heard(utterance: Utterance, now: datetime, bring_back: str = "") -> UserSaid:
     return UserSaid(
+        bring_back=bring_back,
         at=now,
         text=utterance.text,
         language=utterance.language,

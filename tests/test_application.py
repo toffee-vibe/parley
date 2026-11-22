@@ -307,3 +307,18 @@ def test_a_cough_does_not_cancel_the_reply(app):
     clock.moment += timedelta(seconds=2)
     commands.execute(Tick())
     assert mouth.said[-1][0] == reply
+
+
+def test_due_phrase_comes_back_to_the_agent_without_asking(app):
+    """Агент не обязан помнить про повторение: раз в несколько ходов фраза приходит прямо в `heard`."""
+    commands, queries, clock, _ = app
+    commands.execute(SavePhrase("Could you speak more simply?", "говори проще", "Sorry, could you speak more simply?"))
+    clock.moment += timedelta(hours=1)                       # фраза созрела для повторения
+    hints = []
+    for i in range(10):
+        speak(commands, clock, f"phrase number {i}")
+        last = queries.ask(Listen(after=0, timeout_s=0))["events"][-1]
+        hints.append(last.get("bring_back", ""))
+    given = [h for h in hints if h]
+    assert len(given) == 2 and hints[4] and hints[9]          # раз в 5 ходов, не чаще
+    assert "Could you speak more simply?" in given[0] and "Do NOT say this phrase yourself" in given[0]

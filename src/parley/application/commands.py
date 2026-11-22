@@ -51,6 +51,8 @@ class Timing:
     unfinished_factor: float = 1.6  # мысль явно оборвана («потому что…», «and») — ждём во столько раз дольше
     thinking_patience_s: float = 25  # через сколько перестать «думать», если ответа нет
     stuck_transcription_s: float = 30  # распознавание не вернулось за столько — не ждём его, отдаём ход
+    bring_back_every: int = 5       # раз в столько ходов подсказывать агенту фразу для повторения
+    bring_back_tries: int = 3       # столько раз подсказываем одну фразу, потом берём следующую
 
 
 # --- слух ---
@@ -364,7 +366,24 @@ class CommandHandlers:
         if turn:
             utterance = joined(turn)
             self.utterances.append(utterance)
-            self.journal.publish([heard(utterance, now)])
+            self.journal.publish([heard(utterance, now, bring_back=self._bring_back(now))])
+
+    def _bring_back(self, now: datetime) -> str:
+        """Повторение не должно зависеть от памяти агента: по инструкции «вызывай due_phrases каждые 5 ходов»
+        слабые модели получают фразы один раз и забывают о них. Поэтому Parley сам раз в несколько ходов
+        кладёт одну фразу прямо в `heard` — туда, куда агент смотрит при каждом ответе."""
+        self.state.turns_since_hint += 1
+        if self.state.turns_since_hint < self.timing.bring_back_every:
+            return ""
+        tries = self.timing.bring_back_tries
+        phrase = next((p for p in self.phrases.due(now, limit=20) if self.state.hinted.get(p.id, 0) < tries), None)
+        if phrase is None:
+            return ""
+        self.state.turns_since_hint = 0
+        self.state.hinted[phrase.id] = self.state.hinted.get(phrase.id, 0) + 1
+        return (f'Quietly steer your next reply so the user naturally needs to say "{phrase.text}" '
+                f"(= «{phrase.meaning}»). Do NOT say this phrase yourself, don't put it on the board, "
+                f"don't ask them to repeat it. If they use it, call review_phrase({phrase.id!r}, \"used\").")
 
     def _notice_sound(self, command: NoticeSound) -> None:
         if self.companion.listening:

@@ -23,6 +23,8 @@ class LiveState:
     waiting: list[Speech] = field(default_factory=list)  # ждут, пока человек договорит; ещё не отданы рту
     turn: list[Utterance] = field(default_factory=list)   # распознанные куски хода, который ещё не окончен
     transcribing: int = 0                                  # кусков в распознавании: пока они есть, ход не отдаём
+    turns_since_hint: int = 0                              # ходов с прошлой подсказки «верни фразу»
+    hinted: dict[str, int] = field(default_factory=dict)  # сколько раз за запуск подсказывали каждую фразу
 
     def remember(self, speech: Speech) -> None:
         self.speeches[speech.id] = speech
