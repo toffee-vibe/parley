@@ -7,8 +7,18 @@ from dataclasses import dataclass
 from datetime import timedelta
 from statistics import mean
 
+from ..domain.hearing import MAX_HINT_WORDS, RecognitionHints
 from ..domain.learning import Phrase
-from .ports import Clock, FactRepository, Journal, JournalEntry, MistakeRepository, PhraseRepository, UtteranceLog
+from .ports import (
+    Clock,
+    FactRepository,
+    Journal,
+    JournalEntry,
+    MisheardRepository,
+    MistakeRepository,
+    PhraseRepository,
+    UtteranceLog,
+)
 from .state import LiveState
 
 # Что отдавать агенту. Каждое событие будит его, а шаг модели стоит секунды (у Kimi — 4–6 с):
@@ -64,6 +74,14 @@ class Progress:
 
 
 @dataclass(frozen=True)
+class HintsForRecognition:
+    """Что подсказать распознаванию речи сейчас: выученные слова, последняя реплика Пипа, доска."""
+
+
+PIP_SAID_CHARS = 300  # подсказка не резиновая: хвоста реплики хватает — человек повторяет недавнее
+
+
+@dataclass(frozen=True)
 class Recall:
     """Память о пользователе: факты по темам, свежие сверху. topic="" — все."""
 
@@ -81,7 +99,7 @@ def phrase_view(phrase: Phrase) -> dict:
 class QueryHandlers:
     def __init__(self, state: LiveState, journal: Journal, clock: Clock,
                  phrases: PhraseRepository, mistakes: MistakeRepository, utterances: UtteranceLog,
-                 facts: FactRepository):
+                 facts: FactRepository, misheard: MisheardRepository | None = None):
         self.state = state
         self.journal = journal
         self.clock = clock
@@ -89,6 +107,7 @@ class QueryHandlers:
         self.mistakes = mistakes
         self.utterances = utterances
         self.facts = facts
+        self.misheard = misheard
 
     def routes(self) -> dict[type, object]:
         return {
@@ -99,6 +118,7 @@ class QueryHandlers:
             DuePhrases: self._due_phrases,
             Progress: self._progress,
             Recall: self._recall,
+            HintsForRecognition: self._hints,
         }
 
     def _listen(self, query: Listen) -> dict:
@@ -174,3 +194,10 @@ class QueryHandlers:
             notes.append({"id": fact.id, "text": fact.text,
                           "updated": (fact.updated_at or fact.created_at).date().isoformat()})
         return {"facts": grouped, "total": sum(len(v) for v in grouped.values())}
+
+    def _hints(self, _: HintsForRecognition) -> RecognitionHints:
+        words = tuple(m.meant for m in self.misheard.top(MAX_HINT_WORDS)) if self.misheard else ()
+        said = [sp for sp in self.state.speeches.values() if sp.started]
+        pip_said = said[-1].clean_text[-PIP_SAID_CHARS:] if said else ""
+        companion = self.state.companion
+        return RecognitionHints(words, pip_said, companion.board_title if companion.board_open else "")

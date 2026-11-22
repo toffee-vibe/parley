@@ -136,10 +136,8 @@ def main() -> None:
         run(Emote(mood))
         snap(f"06-mood-{mood.value}", 700)
 
-    long = ("Смотри, логика одна на все времена. В обычном предложении вспомогательный глагол спрятан, "
-            "а в отрицании и вопросе он выходит наружу, и тогда основной глагол стоит в простой форме. "
-            "Поэтому did you work, а не did you worked. В Present Perfect вспомогательный — have, и он есть всегда: "
-            "I have worked, have you worked? Скажи по-английски: я работал там два года.")
+    long = ("Смотри, логика одна на все времена: в вопросе вспомогательный глагол выходит наружу, а основной "
+            "стоит в простой форме. Поэтому did you work, а не did you worked. Скажи по-английски: я работал там.")
     speech = run(Say(long, may_interrupt_user=True))
     run(SpeechBegan(speech))
     run(SpeechProgressed(speech, int(len(long) * 0.7)))

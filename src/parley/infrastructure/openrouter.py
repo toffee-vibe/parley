@@ -6,6 +6,7 @@ import base64
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -13,6 +14,7 @@ import numpy as np
 
 from ..application.ports import Recorder
 from ..config import OpenRouterSettings
+from ..domain.hearing import RecognitionHints
 from .audio.pcm import SAMPLE_RATE, to_wav
 from .diary import NullDiary
 
@@ -28,9 +30,11 @@ class OpenRouterError(RuntimeError):
 class OpenRouter:
     name = "openrouter"
 
-    def __init__(self, settings: OpenRouterSettings, diary: Recorder | None = None):
+    def __init__(self, settings: OpenRouterSettings, diary: Recorder | None = None,
+                 hints: Callable[[], RecognitionHints] | None = None):
         self.settings = settings
         self.diary = diary or NullDiary()
+        self.hints = hints  # что подсказать распознаванию: выученные слова, последняя реплика Пипа, доска
         self.http = httpx.Client(
             base_url=settings.base_url,
             timeout=httpx.Timeout(30, connect=5),
@@ -58,16 +62,27 @@ class OpenRouter:
             "input_audio": {"data": base64.b64encode(to_wav(samples, sample_rate)).decode(), "format": "wav"},
             "provider": {"sort": "price"},  # одна модель у разных провайдеров стоит по-разному (до ×3)
         }
-        if self.settings.transcription_prompt:
-            body["prompt"] = self.settings.transcription_prompt
+        static, prompt = self._prompt()
+        if prompt:
+            body["prompt"] = prompt
         note = {"model": model, "audio_s": round(len(samples) / sample_rate, 2)}
         data = self._post("/audio/transcriptions", body, "stt", note).json()
         text = (data.get("text") or "").strip()
-        if self.settings.transcription_prompt and echoes_prompt(text, self.settings.transcription_prompt):
+        # Утечку проверяем по постоянной части подсказки: реплику Пипа человек вправе повторить слово в слово
+        if static and echoes_prompt(text, static):
             # На тишине и шуме модель иногда возвращает саму подсказку — это не речь человека
             self.diary.record("stt_discarded", text=text[:200], audio_s=note["audio_s"], reason="prompt")
             return ""
         return text
+
+    def _prompt(self) -> tuple[str, str]:
+        """(постоянная часть подсказки, вся подсказка). Постоянная — словарь из конфига и выученные слова."""
+        base = self.settings.transcription_prompt
+        hints = self.hints() if self.hints else None
+        if not hints:
+            return base, base
+        static = "\n".join(p for p in (base, hints.vocabulary()) if p)
+        return static, "\n".join(p for p in (static, hints.recent()) if p)[:PROMPT_CHARS]
 
     def speech(self, text: str, voice_id: str = "") -> bytes:
         """Синтез речи в mp3. voice_id — голос из библиотеки Fish Audio; пусто — голос модели по умолчанию.
@@ -108,6 +123,8 @@ class OpenRouter:
                           **_usage(resp))
         return resp
 
+
+PROMPT_CHARS = 1500  # длиннее подсказку модель всё равно обрежет
 
 _WORD = re.compile(r"[\w'-]+")
 

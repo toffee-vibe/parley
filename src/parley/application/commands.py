@@ -14,11 +14,23 @@ from datetime import datetime, timedelta
 
 from ..domain.companion import Activity, Mood
 from ..domain.conversation import SoundNoticed, UserSaying, Utterance, heard, joined, sounds_unfinished
+from ..domain.hearing import Misheard
 from ..domain.learning import Mistake, MistakeKind, Phrase, ReviewOutcome, mistake_key
 from ..domain.memory import Fact
 from ..domain.shared import Aggregate
 from ..domain.speech import Speech
-from .ports import Clock, Ears, FactRepository, Journal, MistakeRepository, Mouth, PhraseRepository, UtteranceLog
+from .ports import (
+    Clock,
+    Ears,
+    FactRepository,
+    Feedback,
+    Journal,
+    MisheardRepository,
+    MistakeRepository,
+    Mouth,
+    PhraseRepository,
+    UtteranceLog,
+)
 from .state import LiveState
 
 
@@ -193,10 +205,30 @@ class Forget:
     fact_id: str
 
 
+# --- обратная связь о работе Parley ---
+
+
+@dataclass(frozen=True)
+class ReportMisheard:
+    """Распознавание записало не то: heard — как записало, meant — что человек сказал на самом деле."""
+
+    heard: str
+    meant: str
+
+
+@dataclass(frozen=True)
+class ReportProblem:
+    """Агент заметил проблему в работе Parley (не в английском пользователя)."""
+
+    problem: str
+    context: str = ""
+
+
 class CommandHandlers:
     def __init__(self, state: LiveState, journal: Journal, clock: Clock, mouth: Mouth,
                  phrases: PhraseRepository, mistakes: MistakeRepository, utterances: UtteranceLog,
-                 facts: FactRepository, timing: Timing = Timing()):
+                 facts: FactRepository, timing: Timing = Timing(), misheard: MisheardRepository | None = None,
+                 feedback: Feedback | None = None):
         self.state = state
         self.journal = journal
         self.clock = clock
@@ -205,6 +237,8 @@ class CommandHandlers:
         self.mistakes = mistakes
         self.utterances = utterances
         self.facts = facts
+        self.misheard = misheard
+        self.feedback = feedback
         self.timing = timing
         self.ears: Ears | None = None  # подставляется в bootstrap: уши и команды ссылаются друг на друга
         self._transcribing_since = clock.now()
@@ -235,6 +269,8 @@ class CommandHandlers:
             NoteMistake: self._note_mistake,
             Remember: self._remember,
             Forget: self._forget,
+            ReportMisheard: self._report_misheard,
+            ReportProblem: self._report_problem,
         }
 
     @property
@@ -477,3 +513,23 @@ class CommandHandlers:
         if self.facts.get(command.fact_id) is None:
             raise NotFound(f"Нет факта {command.fact_id}")
         self.facts.delete(command.fact_id)
+
+    # --- обратная связь о работе Parley ---
+
+    def _report_misheard(self, command: ReportMisheard) -> None:
+        """Правильное слово — в словарь распознавания (со следующей фразы), и запись в отзывы."""
+        if self.misheard is None:
+            return
+        now = self.clock.now()
+        item = self.misheard.get(command.meant)
+        if item:
+            item.again(command.heard, now)
+        else:
+            item = Misheard(meant=command.meant, heard=command.heard, first_seen=now, last_seen=now)
+        self.misheard.save(item)
+        if self.feedback:
+            self.feedback.write("misheard", f"«{item.heard}» вместо «{item.meant}» (уже {item.count} раз)")
+
+    def _report_problem(self, command: ReportProblem) -> None:
+        if self.feedback:
+            self.feedback.write("problem", command.problem + (f" — {command.context}" if command.context else ""))

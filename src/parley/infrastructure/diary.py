@@ -186,6 +186,11 @@ def summarize(folder: Path, days: int = 1) -> str:
     if agents:
         out += ["", "Агенты: " + ", ".join(f"{a} ×{n}" for a, n in agents.most_common())]
 
+    feedback = by_kind.get("feedback", [])
+    if feedback:
+        out += ["", f"Отзывы агента ({len(feedback)}) — целиком в feedback.md"]
+        out += [f"  [{r['at'][11:16]}] {r.get('feedback')}: {str(r.get('text'))[:110]}" for r in feedback[-15:]]
+
     notes = by_kind.get("claude_note", [])
     if notes:
         out += ["", f"Заметки Claude ({len(notes)})"]

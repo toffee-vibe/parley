@@ -22,6 +22,8 @@ from enum import StrEnum
 from .shared import Aggregate, DomainEvent, new_id
 
 _TAG = re.compile(r"\[[^\]]*\]\s*")
+# Дольше ~20 секунд человек не слушает: перебивает (в разговоре 22.11 — 8 раз на репликах по 200–460 символов).
+MAX_SPOKEN_CHARS = 300
 
 
 def without_tags(text: str) -> str:
@@ -85,6 +87,10 @@ class Speech(Aggregate):
         self.text = " ".join(self.text.split())
         if not self.clean_text:
             raise ValueError("Нечего сказать: пустой текст")
+        if len(self.clean_text) > MAX_SPOKEN_CHARS:
+            raise ValueError(f"Too long to say out loud ({len(self.clean_text)} characters, max {MAX_SPOKEN_CHARS}). "
+                             "Nobody listens to a monologue: say 1–3 short sentences, put details on the board "
+                             "(show_board), then let the user talk.")
 
     @property
     def clean_text(self) -> str:

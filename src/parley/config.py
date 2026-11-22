@@ -150,6 +150,11 @@ class Settings:
         return DATA_DIR / "parley.db"
 
     @property
+    def feedback_file(self) -> Path:
+        """Отзывы агентов о работе Parley (infrastructure/feedback.py)."""
+        return DATA_DIR / "feedback.md"
+
+    @property
     def diary_dir(self) -> Path:
         """Технический дневник: как работало приложение (infrastructure/diary.py, `parley report`)."""
         return DATA_DIR / "diary"

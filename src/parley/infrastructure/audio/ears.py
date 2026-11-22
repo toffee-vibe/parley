@@ -164,10 +164,16 @@ class MicrophoneEars:
             self.listener.sound(label, confidence)
 
 
+MAX_WORDS_PER_S = 5.0  # быстрее не говорит никто: 30 слов за 2 секунды — это подсказка или фантазия модели
+
+
 def _imagined(text: str, duration: float) -> bool:
-    """Выдуманная фраза: дежурная фраза из субтитров или пара слов на долгом шуме («Okay.» на 15 секундах)."""
+    """Выдуманная фраза: дежурная фраза из субтитров, пара слов на долгом шуме («Okay.» на 15 секундах)
+    или физически невозможный поток слов на коротком звуке (так модель пересказывает свою подсказку)."""
     words = len(text.split())
-    return text.lower().strip() in HALLUCINATIONS or (0 < words <= 3 and words / max(duration, 0.1) < 0.4)
+    rate = words / max(duration, 0.1)
+    return (text.lower().strip() in HALLUCINATIONS or (0 < words <= 3 and rate < 0.4)
+            or (words >= 8 and rate > MAX_WORDS_PER_S))
 
 
 class _EchoGuard:

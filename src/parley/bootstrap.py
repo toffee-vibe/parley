@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from .application.bus import CommandBus, QueryBus
 from .application.commands import CommandHandlers, OpenEars, PartnerArrived, PartnerLeft, Tick, Timing
 from .application.listeners import HearingReporter, SpeechReporter
-from .application.queries import QueryHandlers
+from .application.queries import HintsForRecognition, QueryHandlers
 from .application.state import LiveState
 from .config import PROJECT_DIR, Settings
 from .infrastructure.audio.devices import Volume, backend
@@ -26,10 +26,18 @@ from .infrastructure.audio.mouth import QueuedMouth
 from .infrastructure.audio.voices import Bilingual, CloudVoice, PiperVoice, VoiceChain
 from .infrastructure.clock import SystemClock
 from .infrastructure.diary import Diary
+from .infrastructure.feedback import FeedbackBook
 from .infrastructure.journal import InMemoryJournal
 from .infrastructure.opencode import OpencodeBridge, OpencodeCli
 from .infrastructure.openrouter import OpenRouter
-from .infrastructure.sqlite import Database, SqliteFacts, SqliteMistakes, SqlitePhrases, SqliteUtterances
+from .infrastructure.sqlite import (
+    Database,
+    SqliteFacts,
+    SqliteMisheard,
+    SqliteMistakes,
+    SqlitePhrases,
+    SqliteUtterances,
+)
 from .interfaces.mcp.runner import BackgroundServer
 from .interfaces.mcp.server import ClaudePresence, build_server
 
@@ -133,12 +141,13 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
     state = LiveState()
     db = Database(settings.database)
     phrases, mistakes, utterances = SqlitePhrases(db), SqliteMistakes(db), SqliteUtterances(db)
-    facts = SqliteFacts(db)
+    facts, misheard = SqliteFacts(db), SqliteMisheard(db)
+    feedback = FeedbackBook(settings.feedback_file, diary)
     models = LocalModels(settings.models_dir)
-    openrouter = OpenRouter(settings.openrouter, diary)
-    levels = Levels()
-
     commands, queries = CommandBus(), QueryBus()
+    # Распознаванию подсказываем выученные слова, последнюю реплику Пипа и доску (domain/hearing.py)
+    openrouter = OpenRouter(settings.openrouter, diary, hints=lambda: queries.ask(HintsForRecognition()))
+    levels = Levels()
 
     v = settings.voice
     voices = [Bilingual("piper", PiperVoice(models, v.fallback_en), PiperVoice(models, v.fallback_ru))]
@@ -151,10 +160,12 @@ def build(settings: Settings, with_microphone: bool = True) -> Parley:
 
     c = settings.conversation
     timing = Timing(reply_pause_s=c.reply_pause_s, turn_end_s=c.turn_end_s)
-    handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, facts, timing)
+    handlers = CommandHandlers(state, journal, clock, mouth, phrases, mistakes, utterances, facts, timing,
+                               misheard=misheard, feedback=feedback)
     for message, handler in handlers.routes().items():
         commands.register(message, handler)
-    for message, handler in QueryHandlers(state, journal, clock, phrases, mistakes, utterances, facts).routes().items():
+    query_handlers = QueryHandlers(state, journal, clock, phrases, mistakes, utterances, facts, misheard=misheard)
+    for message, handler in query_handlers.routes().items():
         queries.register(message, handler)
 
     closers: list[Callable[[], None]] = [mouth.close]

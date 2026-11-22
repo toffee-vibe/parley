@@ -88,6 +88,7 @@ class Companion(Aggregate):
     voice_ended_at: datetime | None = None  # когда пользователь последний раз замолчал
     voice_active: bool = False              # пользователь говорит прямо сейчас (а не сделал паузу)
     board_open: bool = False
+    board_title: str = ""                   # что на доске — подсказка распознаванию
     ears_open: bool = True                  # выбор пользователя: кнопка микрофона
     partner_here: bool = False              # подключён ли Claude — тот, кто слушает и отвечает
 
@@ -188,6 +189,7 @@ class Companion(Aggregate):
         if not (title or markdown):
             raise ValueError("Пустая доска")
         self.board_open = True
+        self.board_title = title
         self._record(BoardShown(at=now, title=title, markdown=markdown))
 
     def hide_board(self, now: datetime) -> None:

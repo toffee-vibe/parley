@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..domain.conversation import Utterance
+from ..domain.hearing import Misheard
 from ..domain.learning import Mistake, MistakeKind, Phrase, mistake_key
 from ..domain.memory import Fact
 
@@ -48,6 +49,14 @@ CREATE TABLE IF NOT EXISTS utterances (
     text TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS utterances_time ON utterances (started_at);
+
+CREATE TABLE IF NOT EXISTS misheard (
+    meant TEXT PRIMARY KEY,
+    heard TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS facts (
     id TEXT PRIMARY KEY,
@@ -188,6 +197,34 @@ class SqliteFacts:
     def _fact(row: sqlite3.Row) -> Fact:
         return Fact(id=row["id"], topic=row["topic"], text=row["text"], created_at=_at(row["created_at"]),
                     updated_at=_dt(row["updated_at"]))
+
+
+class SqliteMisheard:
+    def __init__(self, db: Database):
+        self.db = db
+
+    def get(self, meant: str) -> Misheard | None:
+        with self.db.lock:
+            row = self.db.conn.execute("SELECT * FROM misheard WHERE lower(meant) = lower(?)",
+                                       (" ".join(meant.split()),)).fetchone()
+        return self._item(row) if row else None
+
+    def save(self, item: Misheard) -> None:
+        with self.db.lock, self.db.conn:
+            self.db.conn.execute("DELETE FROM misheard WHERE lower(meant) = lower(?)", (item.meant,))
+            self.db.conn.execute("INSERT INTO misheard VALUES (?,?,?,?,?)",
+                                 (item.meant, item.heard, item.count, _t(item.first_seen), _t(item.last_seen)))
+
+    def top(self, limit: int) -> list[Misheard]:
+        with self.db.lock:
+            rows = self.db.conn.execute("SELECT * FROM misheard ORDER BY count DESC, last_seen DESC LIMIT ?",
+                                        (limit,)).fetchall()
+        return [self._item(r) for r in rows]
+
+    @staticmethod
+    def _item(row: sqlite3.Row) -> Misheard:
+        return Misheard(meant=row["meant"], heard=row["heard"], count=row["count"],
+                        first_seen=_at(row["first_seen"]), last_seen=_at(row["last_seen"]))
 
 
 class SqliteUtterances:

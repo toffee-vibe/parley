@@ -197,6 +197,8 @@ def _bugreport(settings: config.Settings) -> None:
     for run in latest(config.DATA_DIR / "logs", count=2):
         lines = run.read_text(encoding="utf-8", errors="replace").splitlines()
         parts += ["", "=" * 80, f"{run.name} (последние {min(len(lines), 3000)} строк)", *lines[-3000:]]
+    if settings.feedback_file.exists():
+        parts += ["", "=" * 80, "feedback.md", settings.feedback_file.read_text(encoding="utf-8")[-20000:]]
     text = "\n".join(parts)
     if settings.openrouter.api_key:
         text = text.replace(settings.openrouter.api_key, "<ключ OpenRouter>")

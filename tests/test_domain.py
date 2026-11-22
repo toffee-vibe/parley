@@ -129,3 +129,12 @@ class TestMistake:
         assert m.count == 2
         assert m.key == "i worked there in 2020"
         assert m.explanation == "past simple for finished time"
+
+
+def test_monologue_is_refused_with_a_hint():
+    import pytest
+
+    from parley.domain.speech import MAX_SPOKEN_CHARS, Speech
+    Speech("[warm] " + "a" * MAX_SPOKEN_CHARS)                    # теги не считаются
+    with pytest.raises(ValueError, match="show_board"):
+        Speech("Смотри. " * 60)

@@ -37,6 +37,8 @@ from ...application.commands import (
     NotFound,
     OpenEars,
     Remember,
+    ReportMisheard,
+    ReportProblem,
     ReviewPhrase,
     SavePhrase,
     Say,
@@ -216,12 +218,20 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
 
     @mcp.tool()
     def note_for_developer(problem: str, context: str = "") -> str:
-        """Silently note a problem with Parley itself (not with the user's English) for the developer: misheard
-        speech you had to guess, Pip cut the user off or talked over them, long delays, a reply that got dropped,
-        an awkward voice/language switch, a missing tool you wished you had. One short sentence each;
-        `context` = what happened (e.g. heard text). Never mention this to the user."""
-        presence.touched()
-        diary.record("claude_note", problem=problem, context=context)
+        """Silently note a problem with Parley itself (not with the user's English): Pip cut the user off or talked
+        over them, long delays, a reply that got dropped, a wrong voice or language, a missing tool you wished
+        you had. One short sentence; `context` = what happened. It is written immediately to the developer's
+        feedback file. Never mention this to the user. For a misrecognized word use `misheard` instead."""
+        execute(ReportProblem(problem, context))  # и в файл отзывов, и в дневник
+        return "noted"
+
+    @mcp.tool()
+    def misheard(heard: str, meant: str) -> str:
+        """The speech recognizer wrote a word or phrase wrong. `heard` — what the recognizer wrote (e.g. "Agis GPT",
+        "описывать"), `meant` — what the user actually said (e.g. "did", "овеществлять"). Call it silently whenever
+        the user corrects the recognizer ("I said X, not Y") or context makes the mistake obvious. Parley adds
+        `meant` to the recognizer's vocabulary — from the next phrase it is recognized better. Never mention it."""
+        execute(ReportMisheard(heard, meant))
         return "noted"
 
     # --- обучение ---

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from ..domain.conversation import Utterance
+from ..domain.hearing import Misheard
 from ..domain.learning import Mistake, Phrase
 from ..domain.memory import Fact
 from ..domain.shared import DomainEvent
@@ -78,6 +79,20 @@ class FactRepository(Protocol):
     def find_by_text(self, text: str) -> Fact | None: ...
     def delete(self, fact_id: str) -> None: ...
     def all(self) -> list[Fact]: ...
+
+
+class MisheardRepository(Protocol):
+    """Поправки к распознаванию (domain/hearing.py)."""
+
+    def get(self, meant: str) -> Misheard | None: ...
+    def save(self, item: Misheard) -> None: ...
+    def top(self, limit: int) -> list[Misheard]: ...
+
+
+class Feedback(Protocol):
+    """Отзывы агента о работе Parley: пишутся сразу, чтобы их можно было прочитать и исправить."""
+
+    def write(self, kind: str, text: str) -> None: ...
 
 
 class UtteranceLog(Protocol):
