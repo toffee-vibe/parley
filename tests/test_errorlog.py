@@ -40,7 +40,8 @@ CASES = {
 def test_every_kind_of_error_ends_up_in_the_log(case, tmp_path):
     code, expected = CASES[case]
     script = PRELUDE.format(folder=str(tmp_path)) + code + "\ntime.sleep(0.3)\n"
-    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=60)
     log = latest(tmp_path)[0].read_text(encoding="utf-8", errors="replace")
     assert expected in log, f"{case}: нет в журнале\n{log}\n--- stderr ---\n{done.stderr}"
     if case not in ("segfault",):
@@ -56,7 +57,8 @@ def test_qt_messages_go_to_the_log(tmp_path):
         qWarning("QML: Cannot assign to non-existent property")
         time.sleep(0.2)
     """)
-    subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
+    subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=60)
     assert "Cannot assign to non-existent property" in latest(tmp_path)[0].read_text(encoding="utf-8")
 
 
