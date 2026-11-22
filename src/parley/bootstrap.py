@@ -109,6 +109,7 @@ class Parley:
         self.diary.record("session_start", stt=stt_engine(self.settings), stt_cloud=o.transcription_model, stt_fallback=o.fallback_transcription_model,
                           tts=o.voice_model if self.cloud_ready else "", voices=[v.english, v.russian],
                           volume=self.volume.value, audio=backend(), platform=sys.platform)
+        self.diary.capture_stderr()  # ошибки в терминале — и в дневник (parley report их покажет)
         self.server.start()
         self.commands.execute(OpenEars())
         self._pulse.start()

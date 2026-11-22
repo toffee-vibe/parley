@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import threading
 from collections import Counter
 from collections.abc import Iterator
@@ -46,6 +48,7 @@ class Diary:
     def __init__(self, folder: Path):
         self.folder = folder
         self._lock = threading.Lock()
+        self._stderr_captured = False
         folder.mkdir(parents=True, exist_ok=True)
         self._forget_old()
 
@@ -73,6 +76,34 @@ class Diary:
             if not any(isinstance(h, _DiaryHandler) for h in logger.handlers):
                 logger.addHandler(handler)
 
+    def capture_stderr(self) -> None:
+        """Всё, что пишется в stderr — исключения в потоках, сообщения C-библиотек (onnxruntime, Qt, PortAudio),
+        — по-прежнему видно в терминале и вдобавок попадает в дневник (kind=stderr).
+        Перехватываем на уровне файлового дескриптора 2: иначе C-библиотеки мимо Python не поймать."""
+        if self._stderr_captured:
+            return
+        try:
+            original = os.dup(2)
+            read_end, write_end = os.pipe()
+            os.dup2(write_end, 2)
+            os.close(write_end)
+        except OSError:
+            return
+        self._stderr_captured = True
+        threading.excepthook = _log_thread_exception
+        threading.Thread(target=self._pump_stderr, args=(read_end, original), name="stderr", daemon=True).start()
+
+    def _pump_stderr(self, read_end: int, original: int) -> None:
+        buffer = b""
+        while chunk := os.read(read_end, 4096):
+            os.write(original, chunk)          # в терминале всё как было
+            buffer += chunk
+            *lines, buffer = buffer.split(b"\n")
+            for raw in lines:
+                line = raw.decode("utf-8", "replace").rstrip()
+                if line and not _LOG_LINE.match(line):  # свои логи и так в дневнике (warning)
+                    self.record("stderr", line=line[:500])
+
     def _forget_old(self) -> None:
         oldest = date.today() - timedelta(days=KEEP_DAYS)
         for file in self.folder.glob("*.jsonl"):
@@ -81,6 +112,18 @@ class Diary:
                     file.unlink()
             except ValueError:
                 continue
+
+
+# Строки обычного лога (наш формат «12:00:00 INFO name: …» и формат rich «[11/22/26 01:00:00] INFO …»)
+# и строки трассировок — они уже в дневнике вместе с ошибкой (warning.error)
+_LOG_LINE = re.compile(r"^(\d\d:\d\d:\d\d (DEBUG|INFO|WARNING|ERROR|CRITICAL) |\[\d\d/\d\d/\d\d \d\d:\d\d:\d\d\] "
+                       r"|\s|Traceback \(most recent call last\))")
+
+
+def _log_thread_exception(args: threading.ExceptHookArgs) -> None:
+    """Упавший поток — в лог с трассировкой (а значит, в дневник), а не молча в stderr."""
+    logging.getLogger("parley").error("Поток %s упал", args.thread.name if args.thread else "?",
+                                      exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
 
 
 class _DiaryHandler(logging.Handler):
@@ -174,6 +217,15 @@ def summarize(folder: Path, days: int = 1) -> str:
     if warnings:
         out += ["", f"Предупреждения ({sum(warnings.values())})"]
         out += [f"  ×{n} {w}" for w, n in warnings.most_common(8)]
+
+    errors = Counter(str(r.get("line"))[:120] for r in by_kind.get("stderr", []))
+    if errors:
+        out += ["", f"Из терминала ({sum(errors.values())} строк)"]
+        out += [f"  ×{n} {line}" for line, n in errors.most_common(10)]
+
+    agents = Counter(r.get("client") for r in by_kind.get("agent", []))
+    if agents:
+        out += ["", "Агенты: " + ", ".join(f"{a} ×{n}" for a, n in agents.most_common())]
 
     notes = by_kind.get("claude_note", [])
     if notes:
