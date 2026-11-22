@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from ..domain.companion import Activity, Mood
-from ..domain.conversation import SoundNoticed, UserSaying, Utterance, heard, joined
+from ..domain.conversation import SoundNoticed, UserSaying, Utterance, heard, joined, sounds_unfinished
 from ..domain.learning import Mistake, MistakeKind, Phrase, ReviewOutcome, mistake_key
 from ..domain.memory import Fact
 from ..domain.shared import Aggregate
@@ -35,7 +35,8 @@ class Timing:
     """Тайминги разговора (из config.toml, раздел [conversation])."""
 
     reply_pause_s: float = 1.2      # сколько тишины после фразы человека, прежде чем говорить
-    turn_end_s: float = 2.5         # сколько молчать, чтобы мысль считалась законченной и ушла агенту
+    turn_end_s: float = 3.5         # сколько молчать, чтобы мысль считалась законченной и ушла агенту
+    unfinished_factor: float = 1.6  # мысль явно оборвана («потому что…», «and») — ждём во столько раз дольше
     thinking_patience_s: float = 25  # через сколько перестать «думать», если ответа нет
     stuck_transcription_s: float = 30  # распознавание не вернулось за столько — не ждём его, отдаём ход
 
@@ -311,6 +312,12 @@ class CommandHandlers:
         else:
             self._end_turn(now)  # кусок распознался уже после конца хода — не теряем его
 
+    def _turn_end(self) -> float:
+        """Сколько ждать тишины. Последний кусок оборван на союзе или запятой — человек явно не договорил."""
+        last = self.state.turn[-1].text if self.state.turn else ""
+        unfinished = bool(last) and sounds_unfinished(last)
+        return self.timing.turn_end_s * (self.timing.unfinished_factor if unfinished else 1)
+
     def _end_turn(self, now: datetime) -> None:
         """Мысль закончена: склеиваем куски и отдаём агенту одной фразой."""
         turn, self.state.turn = self.state.turn, []
@@ -331,7 +338,7 @@ class CommandHandlers:
         if self.state.transcribing and now - self._transcribing_since > timedelta(
                 seconds=self.timing.stuck_transcription_s):
             self.state.transcribing = 0  # распознавание зависло — не держим ход вечно
-        if not self.state.transcribing and self.companion.turn_is_over(now, timedelta(seconds=self.timing.turn_end_s)):
+        if not self.state.transcribing and self.companion.turn_is_over(now, timedelta(seconds=self._turn_end())):
             self._end_turn(now)
         self.companion.settle(now, timedelta(seconds=self.timing.thinking_patience_s))
         if self.state.waiting and self.companion.user_is_quiet(now, timedelta(seconds=self.timing.reply_pause_s)):

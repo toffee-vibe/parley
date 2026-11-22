@@ -72,6 +72,21 @@ class UserSaying(DomainEvent):
     text: str
 
 
+_UNFINISHED_END = re.compile(r"(\.\.\.|…|,|;|:|—|-)\s*$")
+_DANGLING = {"и", "а", "но", "или", "что", "чтобы", "потому", "если", "когда", "как", "ну", "вот", "типа", "короче",
+             "в", "на", "с", "к", "по", "для", "and", "but", "or", "so", "because", "that", "the", "a", "an", "to",
+             "of", "with", "if", "when", "which", "like"}
+
+
+def sounds_unfinished(text: str) -> bool:
+    """Мысль явно оборвана: кончается союзом, предлогом, запятой, многоточием или вовсе без точки."""
+    text = text.strip()
+    if not text or _UNFINISHED_END.search(text) or not re.search(r"[.!?»\"]$", text):
+        return True
+    last = re.findall(r"[\w'-]+", text.lower())
+    return bool(last) and last[-1] in _DANGLING
+
+
 def joined(parts: list[Utterance]) -> Utterance:
     """Куски одного хода (детектор речи режет фразу по коротким паузам) — одной фразой."""
     return Utterance(" ".join(p.text.strip() for p in parts), parts[0].started_at,

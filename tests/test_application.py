@@ -88,8 +88,8 @@ def part(commands, clock, text, seconds=1.0):
     commands.execute(UserFinishedTalking(Utterance(text, clock.now(), seconds)))
 
 
-def end_turn(commands, clock, seconds=2.6):
-    """Человек молчит дольше turn_end_s (2.5 с) — мысль закончена."""
+def end_turn(commands, clock, seconds=6.0):
+    """Человек молчит дольше turn_end_s (3.5 с, а если мысль оборвана — 5.6 с) — мысль закончена."""
     clock.moment += timedelta(seconds=seconds)
     commands.execute(Tick())
 
@@ -253,3 +253,26 @@ def test_recall_shows_only_recent_session_notes(app):
         commands.execute(Remember(f"Session {day}: talked about tests", "session"))
     notes = queries.ask(Recall())["facts"]["session"]
     assert len(notes) == 5 and notes[0]["text"].startswith("Session 7")
+
+
+def test_unfinished_thought_gets_more_time(app):
+    commands, queries, clock, _ = app
+    part(commands, clock, "I worked there because")            # оборвано на «because»
+    clock.moment += timedelta(seconds=4)
+    commands.execute(Tick())
+    assert "heard" not in kinds(queries)                       # 4 с тишины — ещё ждём
+    part(commands, clock, "the pay was better.")
+    clock.moment += timedelta(seconds=4)
+    commands.execute(Tick())
+    heard = [e["text"] for e in queries.ask(Listen(after=0, timeout_s=0))["events"] if e["kind"] == "heard"]
+    assert heard == ["I worked there because the pay was better."]  # законченная мысль — 3.5 с хватает
+
+
+def test_what_sounds_unfinished():
+    from parley.domain.conversation import sounds_unfinished
+    assert sounds_unfinished("Потому что")
+    assert sounds_unfinished("Я хотел сказать, что...")
+    assert sounds_unfinished("I mean,")
+    assert sounds_unfinished("and then I")
+    assert not sounds_unfinished("I made it yesterday.")
+    assert not sounds_unfinished("Как сказать «услышал»?")
