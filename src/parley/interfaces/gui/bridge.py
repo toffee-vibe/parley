@@ -23,7 +23,8 @@ SMOOTHING = 0.45           # 0 — без сглаживания, ближе к 
 
 # Имя агента из рукопожатия MCP → как показать в окне
 AGENT_NAMES = {"claude-code": "Claude Code", "claude": "Claude", "opencode": "opencode", "codex": "Codex",
-               "cursor": "Cursor", "gemini": "Gemini CLI", "goose": "Goose", "zed": "Zed"}
+               "kimi": "Kimi", "antigravity": "Antigravity", "cursor": "Cursor", "gemini": "Gemini CLI",
+               "goose": "Goose", "zed": "Zed"}
 
 
 def agent_name(client: str) -> str:

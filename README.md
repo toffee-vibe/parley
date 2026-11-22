@@ -43,16 +43,18 @@ uv run parley agents              # проверить, к каким агент
 1. При первом запуске создаётся `~/.config/parley/config.toml`. Впиши `api_key` OpenRouter
    (или задай переменную `OPENROUTER_API_KEY`) и перезапусти приложение.
 2. В папке проекта запусти агента и скажи: *«давай практиковать английский с Parley»*.
-   Подойдёт Claude Code (`claude`), Codex (`codex`) или opencode (`opencode`). Инструкцию, как слушать и
+   Подойдёт Claude Code (`claude`), Kimi Code (`kimi`), Codex (`codex`), opencode (`opencode`) или
+   Antigravity CLI (`agy`). Инструкцию, как слушать и
    как учить, агент получает сам при подключении (поле MCP `instructions` или инструмент `instructions`).
 
    Как агент тебя слышит: Claude Code подписывается на поток событий (Monitor); в opencode Parley сам
    присылает услышанное в его сессию (через `opencode api`, сообщением «Parley events…») — агенту не нужно
-   ничего ждать; Codex опрашивает Parley инструментом `listen`.
+   ничего ждать; Kimi, Codex и Antigravity опрашивают Parley инструментом `listen`.
 
    **Parley подключается только в этой папке.** Каждый агент берёт сервер из файла проекта:
-   `.mcp.json` (Claude Code спросит разрешение при первом запуске), `.codex/config.toml` (Codex читает его,
-   когда проект отмечен доверенным), `opencode.json`. В других папках агенты о Parley не знают и к нему
+   `.mcp.json` (Claude Code спросит разрешение при первом запуске; Kimi Code читает его же),
+   `.codex/config.toml` (Codex читает его, когда проект отмечен доверенным), `opencode.json`,
+   `.agents/plugins/parley/` (плагин проекта для Antigravity). В других папках агенты о Parley не знают и к нему
    не стучатся. Если раньше регистрировал Parley глобально — `uv run parley agents --clean` уберёт это.
    Порт в этих файлах — 8790; поменял `[server] port` в конфиге — поменяй и в них.
 3. Локальные модели (детектор речи, классификатор звуков, запасной голос) скачиваются при первом

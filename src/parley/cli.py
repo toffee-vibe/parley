@@ -20,11 +20,9 @@ import logging
 import os
 import shutil
 import signal
-import subprocess
 import sys
 import threading
 import urllib.request
-from pathlib import Path
 
 from . import config
 
@@ -107,50 +105,12 @@ def _request(settings: config.Settings, path: str, method: str = "GET") -> str:
 
 PROJECT = config.PROJECT_DIR
 
-# Где каждый агент берёт MCP-серверы проекта и как убрать глобальную регистрацию.
-AGENTS = {
-    "claude": (".mcp.json", ["claude", "mcp", "remove", "--scope", "user", "parley"]),
-    "codex": (".codex/config.toml", ["codex", "mcp", "remove", "parley"]),
-    "opencode": ("opencode.json", None),
-}
-
 
 def _agents(clean: bool) -> None:
-    print(f"Parley подключается к агентам только в {PROJECT}\n")
-    for agent, (project_file, remove) in AGENTS.items():
-        installed = shutil.which(agent) is not None
-        here = (PROJECT / project_file).exists()
-        global_ = _registered_globally(agent) if installed else False
-        line = f"  {agent:9} {'установлен' if installed else 'не установлен':14} проект: {project_file} {'✓' if here else '✗ нет файла'}"
-        if global_:
-            line += "  ⚠ зарегистрирован глобально"
-            if clean and remove:
-                done = subprocess.run(_resolved(remove), capture_output=True, cwd=Path.home()).returncode == 0
-                line += " → убран" if done else " → убрать не вышло"
-            elif clean:
-                line += " → убери вручную из глобального конфига"
-        print(line)
-    print("\nClaude Code при первом запуске в папке спросит, разрешить ли сервер parley из .mcp.json.")
-    print("Codex читает .codex/config.toml, только если проект отмечен доверенным (спросит при первом запуске).")
+    from .interfaces.agents import report
+    print(report(PROJECT, clean))
 
 
-def _registered_globally(agent: str) -> bool:
-    """Есть ли parley в настройках агента вне этой папки (запускаем агента из домашней папки)."""
-    command = {"claude": ["claude", "mcp", "get", "parley"], "codex": ["codex", "mcp", "get", "parley"],
-               "opencode": ["opencode", "mcp", "list"]}[agent]
-    try:
-        out = subprocess.run(_resolved(command), capture_output=True, text=True, timeout=60, cwd=Path.home(),
-                             encoding="utf-8", errors="replace")
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    if agent == "opencode":
-        return "parley" in out.stdout
-    return out.returncode == 0 and "parley" in out.stdout
-
-
-def _resolved(command: list[str]) -> list[str]:
-    """Полный путь к программе: на Windows агенты стоят как .cmd-обёртки, и без пути их не запустить."""
-    return [shutil.which(command[0]) or command[0], *command[1:]]
 
 
 def _doctor(settings: config.Settings) -> None:
@@ -201,7 +161,7 @@ def _doctor(settings: config.Settings) -> None:
             line("Parley запущен", f"да, {settings.server.url} → {resp.read().decode()[:80]}")
     except OSError:
         line("Parley запущен", f"нет ({settings.server.url})")
-    for agent, (project_file, _) in AGENTS.items():
-        found = shutil.which(agent)
-        line(agent, f"{'установлен' if found else 'не установлен'}; {project_file}: "
-                    f"{'есть' if (PROJECT / project_file).exists() else 'нет'}")
+    from .interfaces.agents import AGENTS
+    for agent in AGENTS:
+        line(agent.title, f"{'установлен' if agent.installed else 'не установлен'}; {agent.project_file}: "
+                          f"{'есть' if (PROJECT / agent.project_file).exists() else 'нет'}")

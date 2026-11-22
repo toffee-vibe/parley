@@ -94,7 +94,10 @@ def build_server(commands: CommandBus, queries: QueryBus, journal: Journal, url:
 
     def seen(ctx: Context | None) -> None:
         """Агент что-то вызвал: он здесь. Заодно запоминаем, кто это (имя клиента MCP)."""
-        presence.touched(_client_name(ctx))
+        name = _client_name(ctx)
+        if name and name != presence.client:
+            diary.record("agent", client=name)  # в дневнике видно, с каким агентом шёл разговор
+        presence.touched(name)
 
     def execute(command: object):
         presence.touched()

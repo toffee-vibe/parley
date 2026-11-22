@@ -136,7 +136,7 @@ Window {
             spoken: parley.speechSpoken
             hint: !parley.cloudReady ? "Нет ключа OpenRouter — впиши его в ~/.config/parley/config.toml и перезапусти."
                 : parley.activity === "deaf" ? "Микрофон выключен — я тебя не слышу. Нажми M или на меня."
-                : parley.activity === "waiting" ? "Жду агента: в папке parley запусти claude, codex или opencode и скажи «let's practice English». Пока его нет, микрофон выключен."
+                : parley.activity === "waiting" ? "Жду агента: в папке parley запусти агента (claude, kimi, codex, opencode, agy) и скажи «let's practice English». Пока его нет, микрофон выключен."
                 : "Слушаю. Говори по-английски или по-русски."
         }
     }
