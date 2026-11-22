@@ -14,6 +14,7 @@ from ...application.commands import HideBoard, ToggleEars
 from ...application.ports import JournalEntry
 from ...application.queries import CompanionStatus, SpeechNow
 from ...bootstrap import Parley
+from .awake import StayAwake
 from .board_style import style_board
 
 FRAME_MS = 33              # ~30 кадров в секунду: громкость и субтитры
@@ -64,6 +65,7 @@ class Bridge(QObject):
         self._board_markdown = ""
         self._claude_online = False
         self._agent = ""
+        self.awake = StayAwake()  # пока идёт разговор, экран не гаснет
         self._prefs = QSettings("parley", "parley")
         app.volume.set(float(self._prefs.value("volume", app.volume.value)))  # type: ignore[arg-type]
         # Тема: выбранная вручную, а если не выбирали — как в системе
@@ -216,3 +218,5 @@ class Bridge(QObject):
         if online != self._claude_online or name != self._agent:
             self._claude_online, self._agent = online, name
             self.presenceChanged.emit()
+        # Разговор идёт: агент на связи и микрофон не выключен — ты говоришь, а не двигаешь мышью
+        self.awake.set(online and self._activity not in ("waiting", "deaf"))

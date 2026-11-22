@@ -95,6 +95,7 @@ def run(settings: Settings) -> int:
     qt.setQuitOnLastWindowClosed(True)  # закрыл окно — программа завершилась
 
     code = qt.exec()
+    bridge.awake.set(False)  # вернуть системе блокировку экрана
     app.stop()
     del engine, bridge, tray, signals
     return code
