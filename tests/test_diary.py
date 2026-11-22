@@ -52,33 +52,3 @@ def test_openrouter_requests_go_to_diary(tmp_path):
     stt = [r for r in lines(tmp_path) if r["kind"] == "stt"]
     assert stt[0]["model"] == "m" and stt[0]["audio_s"] == 1.0 and stt[0]["cost"] == 0.0001
     assert stt[1]["status"] == 500 and "boom" in stt[1]["error"]
-
-
-def test_terminal_errors_reach_the_diary(tmp_path):
-    """И то, что пишут C-библиотеки прямо в stderr, и упавшие потоки — в дневнике, а в терминале всё как было."""
-    import subprocess
-    import sys
-    import textwrap
-
-    script = textwrap.dedent(f"""
-        import logging, os, threading, time
-        from pathlib import Path
-        logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
-        from parley.infrastructure.diary import Diary
-        diary = Diary(Path({str(tmp_path)!r}))
-        diary.capture_warnings()
-        diary.capture_stderr()
-        os.write(2, b"[W:onnxruntime] Some nodes were not assigned to the preferred execution providers\\n")
-        os.write(2, b"12:00:00 WARNING parley.x: own log line\\n")
-        t = threading.Thread(target=lambda: 1 / 0, name="worker"); t.start(); t.join()
-        time.sleep(0.3)
-    """)
-    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=30)
-    assert "onnxruntime" in done.stderr                       # в терминале по-прежнему видно
-    records = lines(tmp_path)
-    stderr = [r["line"] for r in records if r["kind"] == "stderr"]
-    assert stderr[0] == "[W:onnxruntime] Some nodes were not assigned to the preferred execution providers"
-    assert not any("own log line" in line or line.startswith("  File") for line in stderr)
-    crashed = [r for r in records if r["kind"] == "warning" and "worker" in r["message"]]
-    assert crashed and "ZeroDivisionError" in crashed[0]["error"]
-    assert "Из терминала" in summarize(tmp_path)

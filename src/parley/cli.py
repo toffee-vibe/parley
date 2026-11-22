@@ -6,6 +6,7 @@
     parley status          состояние персонажа
     parley report [-d N]   как работало приложение за N дней: распознавание, цена, задержки, сбои, заметки Claude
     parley doctor          система, звук, устройства, Qt, агенты — для отчёта об ошибке
+    parley bugreport       один файл для issue: doctor + журналы последних запусков + сводка (без ключей)
     parley agents [--clean]  где подключён Parley; --clean — убрать глобальные регистрации
 
 Агенты подключаются к Parley только в папке проекта: .mcp.json (Claude Code), .codex/config.toml (Codex),
@@ -22,6 +23,7 @@ import shutil
 import signal
 import sys
 import threading
+import time
 import urllib.request
 
 from . import config
@@ -37,6 +39,7 @@ def main() -> None:
     report = sub.add_parser("report", help="сводка технического дневника")
     report.add_argument("-d", "--days", type=int, default=1, help="за сколько дней (по умолчанию — сегодня)")
     sub.add_parser("doctor", help="всё о системе для отчёта об ошибке")
+    sub.add_parser("bugreport", help="собрать один файл для issue: doctor, журналы запусков, сводка")
     agents = sub.add_parser("agents", help="где подключён Parley (Claude Code, Codex, opencode)")
     agents.add_argument("--clean", action="store_true", help="убрать глобальные регистрации Parley")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -47,8 +50,13 @@ def main() -> None:
         except (AttributeError, ValueError):
             pass
 
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
+    level = logging.DEBUG if args.verbose else logging.INFO
+    if args.command in (None, "headless"):
+        # Само приложение: журнал запуска ловит всё с этой строки (errorlog.py)
+        from .errorlog import ErrorLog
+        ErrorLog(config.DATA_DIR / "logs").install(level)
+    else:
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S")
     if not args.verbose:  # каждый HTTP-запрос и служебные сообщения MCP в терминале не нужны
         for noisy in ("httpx", "mcp", "uvicorn"):
             logging.getLogger(noisy).setLevel(logging.WARNING)
@@ -69,7 +77,9 @@ def main() -> None:
             from .infrastructure.diary import summarize
             print(summarize(settings.diary_dir, args.days))
         case "doctor":
-            _doctor(settings)
+            print(_doctor(settings))
+        case "bugreport":
+            _bugreport(settings)
         case "agents":
             _agents(clean=args.clean)
 
@@ -77,8 +87,11 @@ def main() -> None:
 def _exit(code: int) -> None:
     """Выход без ожидания фоновых потоков: запрос к облаку может висеть до 30 секунд, а ждать его незачем.
     Всё важное к этому моменту уже остановлено (Parley.stop), база пишется сразу."""
+    logging.getLogger("parley").info("Parley завершился (код %s)", code)
+    logging.shutdown()  # дописать журнал запуска: os._exit обработчики выхода не вызывает
     sys.stdout.flush()
     sys.stderr.flush()
+    time.sleep(0.1)     # поток перехвата stderr успевает переложить последние строки
     os._exit(code)
 
 
@@ -113,15 +126,16 @@ def _agents(clean: bool) -> None:
 
 
 
-def _doctor(settings: config.Settings) -> None:
+def _doctor(settings: config.Settings) -> str:
     """Всё, что нужно для issue. Ключей и фраз здесь нет."""
     import platform
     from importlib.metadata import version
 
-    def line(name: str, value: object) -> None:
-        print(f"  {name:22} {value}")
+    out = ["Parley doctor"]
 
-    print("Parley doctor")
+    def line(name: str, value: object) -> None:
+        out.append(f"  {name:22} {value}")
+
     line("parley", version("parley"))
     line("система", f"{platform.system()} {platform.release()} ({platform.machine()})")
     line("python", platform.python_version())
@@ -165,3 +179,29 @@ def _doctor(settings: config.Settings) -> None:
     for agent in AGENTS:
         line(agent.title, f"{'установлен' if agent.installed else 'не установлен'}; {agent.project_file}: "
                           f"{'есть' if (PROJECT / agent.project_file).exists() else 'нет'}")
+    from .errorlog import latest
+    runs = latest(config.DATA_DIR / "logs")
+    line("журнал запуска", runs[-1] if runs else "ещё не было")
+    return "\n".join(out)
+
+
+def _bugreport(settings: config.Settings) -> None:
+    """Один файл для issue: doctor, журналы двух последних запусков, сводка дневника. Ключ вырезан."""
+    import re
+    from datetime import datetime
+
+    from .errorlog import latest
+    from .infrastructure.diary import summarize
+
+    parts = [_doctor(settings), "", "=" * 80, summarize(settings.diary_dir, days=2)]
+    for run in latest(config.DATA_DIR / "logs", count=2):
+        lines = run.read_text(encoding="utf-8", errors="replace").splitlines()
+        parts += ["", "=" * 80, f"{run.name} (последние {min(len(lines), 3000)} строк)", *lines[-3000:]]
+    text = "\n".join(parts)
+    if settings.openrouter.api_key:
+        text = text.replace(settings.openrouter.api_key, "<ключ OpenRouter>")
+    text = re.sub(r"sk-or-[\w-]{10,}", "<ключ>", text)
+    target = config.DATA_DIR / f"parley-bugreport-{datetime.now():%Y%m%d-%H%M%S}.txt"
+    target.write_text(text, encoding="utf-8")
+    print(f"Отчёт: {target}\nПриложи этот файл к issue: https://github.com/toffee-vibe/parley/issues/new\n"
+          "В нём нет ключей, но есть фрагменты твоих фраз из дневника — посмотри, прежде чем отправлять.")

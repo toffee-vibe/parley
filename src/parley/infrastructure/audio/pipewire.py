@@ -57,7 +57,7 @@ class Microphone:
         size = CHUNK * 2
         while not self._stop.is_set():
             try:
-                self._proc = subprocess.Popen(self._command(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                self._proc = subprocess.Popen(self._command(), stdout=subprocess.PIPE)  # stderr — в журнал запуска
             except FileNotFoundError:
                 log.error("pw-record не найден — нужен PipeWire")
                 return
@@ -89,7 +89,7 @@ class Playback:
                "-P", "{ node.name = parley-voice, node.description = \"Parley voice\" }"]
         if target:
             cmd += ["--target", target]
-        self._proc = subprocess.Popen([*cmd, "-"], stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self._proc = subprocess.Popen([*cmd, "-"], stdin=subprocess.PIPE)  # stderr — в журнал запуска
         try:
             import fcntl  # только Linux: на других системах этот модуль не используется
 

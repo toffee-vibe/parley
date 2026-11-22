@@ -9,11 +9,13 @@ body:
     validations:
       required: true
   - type: textarea
-    id: doctor
+    id: bugreport
     attributes:
-      label: Вывод `uv run parley doctor`
-      description: Система, звук, устройства, Qt, агенты. Ключей там нет.
-      render: text
+      label: Файл от `uv run parley bugreport`
+      description: >-
+        Перетащи сюда файл, который создаст команда: система, звук, агенты и журналы последних запусков —
+        все ошибки, в том числе то, что было в терминале. Ключей в нём нет. Если файл приложить нельзя —
+        вставь хотя бы вывод `uv run parley doctor`.
     validations:
       required: true
   - type: textarea
