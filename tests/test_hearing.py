@@ -61,3 +61,29 @@ def test_prompt_leak_is_not_taken_for_speech():
     real = ["I worked with Python and PostgreSQL on the backend", "Так, ну, давай начнем с времен на английском.",
             "I made it.", "Do not translate this sentence, just tell me what it means"]
     assert not any(echoes_prompt(t, prompt) for t in real)
+
+
+def test_rate_limited_free_voice_is_replaced_by_the_same_voice_paid(monkeypatch):
+    client = OpenRouter(OpenRouterSettings(api_key="k", voice_model="fish:free", paid_voice_model="fish"))
+    used = []
+
+    def fake(text, voice_id, model):
+        used.append((model, voice_id))
+        if model == "fish:free":
+            raise OpenRouterError("429", 429)
+        return b"mp3"
+
+    monkeypatch.setattr(client, "_speech", fake)
+    assert client.speech("Привет", "ru-voice") == b"mp3"
+    assert used == [("fish:free", "ru-voice"), ("fish", "ru-voice")]  # тот же голос, не Piper
+
+
+def test_without_paid_model_rate_limit_goes_to_piper(monkeypatch):
+    client = OpenRouter(OpenRouterSettings(api_key="k", voice_model="fish:free"))
+    monkeypatch.setattr(client, "_speech", lambda *a: (_ for _ in ()).throw(OpenRouterError("429", 429)))
+    try:
+        client.speech("Привет", "ru-voice")
+    except OpenRouterError as e:
+        assert e.status == 429  # VoiceChain возьмёт Piper
+    else:
+        raise AssertionError("без платной модели — ошибка, а не тихая трата денег")

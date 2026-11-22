@@ -70,12 +70,25 @@ class OpenRouter:
         return text
 
     def speech(self, text: str, voice_id: str = "") -> bytes:
-        """Синтез речи в mp3. voice_id — голос из библиотеки Fish Audio; пусто — голос модели по умолчанию."""
-        body: dict[str, Any] = {"model": self.settings.voice_model, "input": text, "response_format": "mp3",
-                                "provider": {"sort": "price"}}
+        """Синтез речи в mp3. voice_id — голос из библиотеки Fish Audio; пусто — голос модели по умолчанию.
+
+        Бесплатная модель даёт 20 запросов в минуту, а смешанная речь — это много коротких кусков. Упёрлись
+        в лимит и задана paid_voice_model — тот же кусок тем же голосом платной моделью; иначе Parley уходит
+        на минуту на запасной Piper (другой голос)."""
+        try:
+            return self._speech(text, voice_id, self.settings.voice_model)
+        except OpenRouterError as e:
+            paid = self.settings.paid_voice_model
+            if e.status != 429 or not paid or paid == self.settings.voice_model:
+                raise
+            log.info("Бесплатный голос упёрся в лимит — этот кусок озвучит %s", paid)
+            return self._speech(text, voice_id, paid)
+
+    def _speech(self, text: str, voice_id: str, model: str) -> bytes:
+        body: dict[str, Any] = {"model": model, "input": text, "response_format": "mp3", "provider": {"sort": "price"}}
         if voice_id:
             body["voice"] = voice_id
-        note = {"model": self.settings.voice_model, "voice": voice_id, "chars": len(text)}
+        note = {"model": model, "voice": voice_id, "chars": len(text)}
         return self._post("/audio/speech", body, "tts", note).content
 
     def _post(self, path: str, body: dict[str, Any], kind: str, note: dict[str, Any]) -> httpx.Response:

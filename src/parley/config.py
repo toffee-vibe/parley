@@ -30,6 +30,10 @@ transcription_model = "openai/gpt-4o-mini-transcribe"
 transcription_prompt = "English speaking practice with Parley (Pip). The speaker is Russian and mixes English and Russian: keep every word in the language it was spoken, do not translate. Transcribe verbatim: keep grammar mistakes exactly as spoken. Python, backend, PostgreSQL, FastAPI, Docker, deploy."
 fallback_transcription_model = "openai/whisper-large-v3-turbo"  # если основная отказала (лимит запросов, сбой)
 voice_model = "fish-audio/s2.1-pro-free:free"      # бесплатно; пусто — только локальный голос
+# Бесплатный голос — 20 запросов в минуту. Упёрлись в лимит — на минуту включается запасной Piper (другой голос).
+# Чтобы голос не менялся, впиши платную модель того же голоса: "fish-audio/s2.1-pro" (~$15 за 1 млн символов;
+# платится только в минуты лимита).
+paid_voice_model = ""
 
 [voice]
 # Два голоса-носителя из библиотеки Fish Audio (fish.audio → Voice Library, id из адреса страницы голоса).
@@ -82,6 +86,7 @@ class OpenRouterSettings:
                                  "Python, backend, PostgreSQL, FastAPI, Docker, deploy.")
     fallback_transcription_model: str = "openai/whisper-large-v3-turbo"
     voice_model: str = "fish-audio/s2.1-pro-free:free"
+    paid_voice_model: str = ""   # тот же голос платно, если бесплатная упёрлась в лимит; "" — Piper
 
 
 @dataclass

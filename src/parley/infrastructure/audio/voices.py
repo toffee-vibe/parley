@@ -13,6 +13,7 @@ import logging
 import re
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Protocol
@@ -116,13 +117,30 @@ class CloudVoice:
     voice_id — голос из библиотеки Fish Audio (fish.audio → Voice Library).
     """
 
+    CACHE_CHARS = 40    # короткие куски («did», «are», «I made it») на уроке повторяются десятки раз
+    CACHE_SIZE = 300
+
     def __init__(self, client: OpenRouter, voice_id: str, name: str = "cloud"):
         self.client = client
         self.voice_id = voice_id
         self.name = name
+        self._cache: OrderedDict[str, tuple[np.ndarray, int]] = OrderedDict()
+        self._lock = threading.Lock()
 
     def synthesize(self, text: str) -> tuple[np.ndarray, int]:
-        return decode(self.client.speech(text, self.voice_id))
+        """Короткие куски берутся из памяти: каждый запрос к бесплатной модели — из лимита 20 в минуту."""
+        key = " ".join(text.split())
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
+        result = decode(self.client.speech(text, self.voice_id))
+        if len(key) <= self.CACHE_CHARS:
+            with self._lock:
+                self._cache[key] = result
+                while len(self._cache) > self.CACHE_SIZE:
+                    self._cache.popitem(last=False)
+        return result
 
 
 class PiperVoice:

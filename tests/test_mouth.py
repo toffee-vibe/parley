@@ -110,3 +110,24 @@ def test_mouth_speaks_language_pieces_and_counts_progress_in_original_text(monke
     wait_until(lambda: ("ended", "s1") in listener.log)
     progress = [c for kind, c in listener.log if kind == "progress"]
     assert progress[-1] <= len(text) + 1
+
+
+def test_short_cloud_pieces_are_not_requested_twice(monkeypatch):
+    import numpy as np
+
+    from parley.infrastructure.audio.voices import CloudVoice
+
+    class Client:
+        calls = 0
+
+        def speech(self, text, voice_id):
+            Client.calls += 1
+            return b"mp3"
+
+    voice = CloudVoice(Client(), "en")
+    monkeypatch.setattr("parley.infrastructure.audio.voices.decode", lambda data: (np.zeros(10, np.float32), 24000))
+    for _ in range(5):
+        voice.synthesize("did")
+    voice.synthesize("Did you work there for two years or was it a bit less than that?")
+    voice.synthesize("Did you work there for two years or was it a bit less than that?")
+    assert Client.calls == 3  # «did» — один запрос, длинная фраза — каждый раз (она не повторяется)
