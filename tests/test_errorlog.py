@@ -32,7 +32,8 @@ CASES = {
         "async def main():\n    asyncio.get_running_loop().create_task(boom()); await asyncio.sleep(0.1)\n"
         "asyncio.run(main()); import gc; gc.collect()", "lost task"),
     "падение программы": ("raise KeyError('crash at startup')", "crash at startup"),
-    "segfault": ("import ctypes; ctypes.string_at(0)", "Fatal Python error"),
+    # Linux/macOS: «Fatal Python error: Segmentation fault», Windows: «Windows fatal exception: access violation»
+    "segfault": ("import ctypes; ctypes.string_at(0)", "atal"),
 }
 
 
