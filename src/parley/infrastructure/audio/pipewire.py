@@ -89,7 +89,9 @@ class Playback:
                "-P", "{ node.name = parley-voice, node.description = \"Parley voice\" }"]
         if target:
             cmd += ["--target", target]
-        self._proc = subprocess.Popen([*cmd, "-"], stdin=subprocess.PIPE)  # stderr — в журнал запуска
+        # bufsize=0: без буфера в Python. Иначе оборванная фраза оставляет недописанный буфер, и при сборке
+        # мусора Python пытается дописать его в уже закрытый pw-play — «Exception ignored … BrokenPipeError».
+        self._proc = subprocess.Popen([*cmd, "-"], stdin=subprocess.PIPE, bufsize=0)  # stderr — в журнал запуска
         try:
             import fcntl  # только Linux: на других системах этот модуль не используется
 
@@ -105,10 +107,13 @@ class Playback:
         try:
             for i in range(0, len(samples), step):
                 self._proc.stdin.write(to_s16(samples[i:i + step] * self._volume.gain()))
-                self._proc.stdin.flush()
-            self._proc.stdin.close()
         except (BrokenPipeError, ValueError, OSError):
             pass  # оборвали — это нормально
+        finally:
+            try:
+                self._proc.stdin.close()
+            except OSError:
+                pass
 
     @property
     def elapsed(self) -> float:
